@@ -43,3 +43,8 @@ coverage/
 # generated native folders
 /ios
 /android
+
+# local assistant config
+.claude/
+CLAUDE.md
+AGENTS.md
