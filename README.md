@@ -1,0 +1,83 @@
+# StreakSync
+
+Offline-first habit tracker with real-time social accountability. Built with React Native, Expo, and Supabase.
+
+Create habits, check them off daily, and join groups where friends see each other's streaks in real time — with an activity feed and push notifications when someone keeps (or breaks) a streak.
+
+## Tech stack
+
+- **Mobile:** [React Native](https://reactnative.dev/) + [Expo](https://expo.dev/) (managed workflow), TypeScript strict
+- **Backend:** [Supabase](https://supabase.com/) — Postgres, Auth, Realtime, Storage
+- **Navigation:** [React Navigation](https://reactnavigation.org/) (native stack)
+- **Forms:** [React Hook Form](https://react-hook-form.com/) + [Zod](https://zod.dev/)
+- **State:** [Zustand](https://zustand.docs.pmnd.rs/)
+- **Styling:** [NativeWind](https://www.nativewind.dev/) (Tailwind CSS for React Native)
+- **Testing:** Jest (jest-expo) + React Native Testing Library
+- **CI:** GitHub Actions
+
+## Local setup
+
+### 1. Prerequisites
+
+- Node.js 20+ and npm
+- The [Expo Go](https://expo.dev/go) app on your phone (or an Android/iOS simulator)
+
+### 2. Install dependencies
+
+```bash
+git clone <your-fork-or-clone-url>
+cd StreakSync
+npm install
+```
+
+### 3. Create the Supabase project
+
+1. Create a free project at [supabase.com/dashboard](https://supabase.com/dashboard).
+2. Apply the database migrations, in order, from `supabase/migrations/`:
+   - **SQL editor (simplest):** open _SQL Editor_ in the dashboard, paste the contents of `0001_initial_schema.sql`, run it, then do the same for `0002_row_level_security.sql`.
+   - **Supabase CLI (alternative):** `supabase link --project-ref <your-ref>` then `supabase db push`.
+
+### 4. Configure the environment
+
+```bash
+cp .env.example .env
+```
+
+Fill in both values from _Project Settings → API_ in the Supabase dashboard:
+
+- `EXPO_PUBLIC_SUPABASE_URL` — the Project URL
+- `EXPO_PUBLIC_SUPABASE_ANON_KEY` — the `anon` public key
+
+### 5. Run the app
+
+```bash
+npm start
+```
+
+Scan the QR code with Expo Go (Android) or the Camera app (iOS). You can now sign up, sign in, and sign out; the session persists across app restarts.
+
+> **Tip:** by default Supabase requires email confirmation on signup. For a faster dev loop you can disable it under _Authentication → Providers → Email → Confirm email_.
+
+## Scripts
+
+| Command             | What it does              |
+| ------------------- | ------------------------- |
+| `npm start`         | Start the Expo dev server |
+| `npm run lint`      | ESLint                    |
+| `npm run format`    | Prettier (write)          |
+| `npm run typecheck` | TypeScript, no emit       |
+| `npm test`          | Jest unit tests           |
+
+## Roadmap
+
+- [x] **Phase 1 — Foundation:** Expo + Supabase setup, full database schema with RLS, email/password authentication with persisted sessions
+- [ ] **Phase 2 — Habits:** habit CRUD, daily completion, streak calculation, navigation
+- [ ] **Phase 3 — Social:** groups, invites, realtime activity feed, leaderboard
+- [ ] **Phase 4 — Offline-first:** local SQLite, sync queue, conflict resolution
+- [ ] **Phase 5 — Notifications:** push notifications via Expo Push
+- [ ] **Phase 6 — Polish:** animations, dark mode, onboarding
+- [ ] **Phase 7 — Ship:** EAS Build, landing page, demo GIF
+
+## License
+
+[MIT](LICENSE)
