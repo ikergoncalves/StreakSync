@@ -19,7 +19,7 @@ Create habits, check them off daily, and join groups where friends see each othe
 
 ### 1. Prerequisites
 
-- Node.js 20+ and npm
+- Node.js 22+ and npm
 - The [Expo Go](https://expo.dev/go) app on your phone (or an Android/iOS simulator)
 
 ### 2. Install dependencies
