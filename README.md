@@ -8,7 +8,7 @@ Create habits, check them off daily, and join groups where friends see each othe
 
 - **Mobile:** [React Native](https://reactnative.dev/) + [Expo](https://expo.dev/) (managed workflow), TypeScript strict
 - **Backend:** [Supabase](https://supabase.com/) — Postgres, Auth, Realtime, Storage
-- **Navigation:** [React Navigation](https://reactnavigation.org/) (native stack)
+- **Navigation:** [React Navigation](https://reactnavigation.org/) (native stack + bottom tabs)
 - **Forms:** [React Hook Form](https://react-hook-form.com/) + [Zod](https://zod.dev/)
 - **State:** [Zustand](https://zustand.docs.pmnd.rs/)
 - **Styling:** [NativeWind](https://www.nativewind.dev/) (Tailwind CSS for React Native)
@@ -54,7 +54,7 @@ Fill in both values from _Project Settings → API_ in the Supabase dashboard:
 npm start
 ```
 
-Scan the QR code with Expo Go (Android) or the Camera app (iOS). You can now sign up, sign in, and sign out; the session persists across app restarts.
+Scan the QR code with Expo Go (Android) or the Camera app (iOS). You can now sign up, create daily or weekly habits, check them off from the Today tab, and watch your streaks grow; the session persists across app restarts.
 
 > **Tip:** by default Supabase requires email confirmation on signup. For a faster dev loop you can disable it under _Authentication → Providers → Email → Confirm email_.
 
@@ -71,7 +71,7 @@ Scan the QR code with Expo Go (Android) or the Camera app (iOS). You can now sig
 ## Roadmap
 
 - [x] **Phase 1 — Foundation:** Expo + Supabase setup, full database schema with RLS, email/password authentication with persisted sessions
-- [ ] **Phase 2 — Habits:** habit CRUD, daily completion, streak calculation, navigation
+- [x] **Phase 2 — Habits:** habit CRUD, daily completion with optimistic UI, timezone-safe streak calculation, tab navigation
 - [ ] **Phase 3 — Social:** groups, invites, realtime activity feed, leaderboard
 - [ ] **Phase 4 — Offline-first:** local SQLite, sync queue, conflict resolution
 - [ ] **Phase 5 — Notifications:** push notifications via Expo Push
