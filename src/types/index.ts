@@ -37,3 +37,70 @@ export interface HabitCompletion {
   created_at: string;
   updated_at: string;
 }
+
+export type GroupRole = 'owner' | 'member';
+
+/** Row shape of public.groups. */
+export interface Group {
+  id: string;
+  name: string;
+  /** Short human-typeable code (e.g. A7K2M9XZ), unique per group. */
+  invite_code: string;
+  owner_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Row shape of public.group_members with the member's profile embedded. */
+export interface GroupMember {
+  group_id: string;
+  user_id: string;
+  role: GroupRole;
+  joined_at: string;
+  profile: Profile;
+}
+
+/** Shared fields of every streak-related activity payload. */
+export interface StreakEventHabit {
+  habit_id: string;
+  habit_name: string;
+  habit_icon: string | null;
+  frequency: HabitFrequency;
+}
+
+/**
+ * Discriminated union of activity_events payload shapes, keyed by `type`
+ * (matching the public.activity_event_type enum). `payload` is stored as
+ * jsonb; these are the shapes the app writes and expects to read back.
+ */
+export type ActivityEventData =
+  | {
+      /** A completion increased the habit's current streak. */
+      type: 'streak_continued';
+      payload: StreakEventHabit & { current_streak: number };
+    }
+  | {
+      /** A streak that was >= 3 reset to 0 because a day/week was missed. */
+      type: 'streak_broken';
+      payload: StreakEventHabit & { previous_streak: number };
+    }
+  | {
+      type: 'habit_created';
+      payload: { habit_id: string; habit_name: string; habit_icon: string | null };
+    }
+  | {
+      /** Who joined is the row's user_id; no extra payload. */
+      type: 'member_joined';
+      payload: Record<string, never>;
+    };
+
+/** Row shape of public.activity_events. */
+export type ActivityEvent = ActivityEventData & {
+  id: string;
+  group_id: string;
+  user_id: string;
+  created_at: string;
+};
+
+/** Feed row: the actor's profile is null until it can be resolved. */
+export type ActivityEventWithProfile = ActivityEvent & { profile: Profile | null };
