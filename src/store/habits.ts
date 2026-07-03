@@ -1,6 +1,9 @@
 import { create } from 'zustand';
 
 import { useAuthStore } from './auth';
+import { useGroupsStore } from './groups';
+import { insertActivityEvent } from '../lib/activity';
+import { detectStreakActivity, habitCreatedEvent } from '../lib/activityEvents';
 import {
   createHabit,
   HabitInput,
@@ -11,7 +14,7 @@ import {
   updateHabit,
 } from '../lib/habits';
 import { computeHabitStreak, Streak, todayLocalISO } from '../lib/streaks';
-import { Habit } from '../types';
+import { ActivityEventData, Habit } from '../types';
 
 const SIGNED_OUT_MESSAGE = 'You need to be signed in to do that.';
 const NETWORK_MESSAGE = 'Network error. Check your connection and try again.';
@@ -38,16 +41,42 @@ export interface CompletionChange {
   date: string;
   /** New state: true when the completion was turned on. */
   completed: boolean;
-  /** The habit's streak immediately after this change. */
-  streak: Streak;
+  /** Ascending completion dates before and after the change. */
+  before: string[];
+  after: string[];
 }
 
-// Phase 3 hook: every completion mutation ends here after it succeeds, so
-// emitting activity events (e.g. a streak reaching a multiple of 5) will only
-// require filling this in — no refactoring of the toggle flow. Intentionally
-// a no-op until activity_events writes land in Phase 3.
+/**
+ * Fans activity events out to every group the acting user shares with at
+ * least one other member. Solo users cost nothing here: the group list is an
+ * in-memory read (loaded once at app start by AppNavigator), so no query
+ * runs and no rows are written. Best-effort by design — the feed must never
+ * block or fail the habit mutation that triggered it.
+ */
+function publishActivity(events: ActivityEventData[]): void {
+  if (events.length === 0) {
+    return;
+  }
+  const user = useAuthStore.getState().user;
+  if (!user) {
+    return;
+  }
+  const sharedGroups = useGroupsStore
+    .getState()
+    .myGroups.filter((group) => group.member_count > 1);
+  for (const group of sharedGroups) {
+    for (const event of events) {
+      void insertActivityEvent({ groupId: group.id, userId: user.id, event }).catch(
+        () => undefined,
+      );
+    }
+  }
+}
+
+// Phase 3 hook: every completion mutation ends here after it succeeds, so no
+// refactoring of the toggle flow was needed to add activity events.
 function notifyCompletionChanged(change: CompletionChange): void {
-  void change;
+  publishActivity(detectStreakActivity(change));
 }
 
 interface HabitsState {
@@ -95,6 +124,7 @@ export const useHabitsStore = create<HabitsState>((set, get) => ({
       const habit = await createHabit(user.id, input);
       // Habits are listed oldest-first, so the new one belongs at the end.
       set((state) => ({ habits: [...state.habits, habit] }));
+      publishActivity([habitCreatedEvent(habit)]);
       return { error: null };
     } catch (error) {
       return { error: getHabitsErrorMessage(error) };
@@ -154,12 +184,7 @@ export const useHabitsStore = create<HabitsState>((set, get) => ({
       return { error: getHabitsErrorMessage(error) };
     }
 
-    notifyCompletionChanged({
-      habit,
-      date,
-      completed,
-      streak: computeHabitStreak(habit, after, todayLocalISO()),
-    });
+    notifyCompletionChanged({ habit, date, completed, before, after });
     return { error: null };
   },
 }));
