@@ -34,8 +34,9 @@ npm install
 
 1. Create a free project at [supabase.com/dashboard](https://supabase.com/dashboard).
 2. Apply the database migrations, in order, from `supabase/migrations/`:
-   - **SQL editor (simplest):** open _SQL Editor_ in the dashboard, paste the contents of `0001_initial_schema.sql`, run it, then do the same for `0002_row_level_security.sql`.
+   - **SQL editor (simplest):** open _SQL Editor_ in the dashboard and run the contents of each `NNNN_*.sql` file in ascending order (`0001_initial_schema.sql`, `0002_row_level_security.sql`, `0003_group_join_rpc.sql`).
    - **Supabase CLI (alternative):** `supabase link --project-ref <your-ref>` then `supabase db push`.
+3. **Enable Realtime** for the activity feed: in the dashboard go to _Database → Replication_ and toggle on the `activity_events` table (this adds it to the `supabase_realtime` publication; it can't be done from a migration here). Without it the app still works, but group activity only appears after a manual refresh.
 
 ### 4. Configure the environment
 
@@ -72,7 +73,7 @@ Scan the QR code with Expo Go (Android) or the Camera app (iOS). You can now sig
 
 - [x] **Phase 1 — Foundation:** Expo + Supabase setup, full database schema with RLS, email/password authentication with persisted sessions
 - [x] **Phase 2 — Habits:** habit CRUD, daily completion with optimistic UI, timezone-safe streak calculation, tab navigation
-- [ ] **Phase 3 — Social:** groups, invites, realtime activity feed, leaderboard
+- [x] **Phase 3 — Social:** groups, invite codes + `streaksync://join/<CODE>` deep links, realtime activity feed, leaderboard
 - [ ] **Phase 4 — Offline-first:** local SQLite, sync queue, conflict resolution
 - [ ] **Phase 5 — Notifications:** push notifications via Expo Push
 - [ ] **Phase 6 — Polish:** animations, dark mode, onboarding
