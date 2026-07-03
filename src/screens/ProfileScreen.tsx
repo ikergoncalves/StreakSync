@@ -33,7 +33,9 @@ export function ProfileScreen() {
       <View className="flex-1 items-center justify-center px-6">
         <Text className="text-5xl">🔥</Text>
         <Text className="mt-4 text-2xl font-bold text-slate-900">{displayName}</Text>
-        {profile ? <Text className="mt-1 text-base text-slate-500">@{profile.username}</Text> : null}
+        {profile ? (
+          <Text className="mt-1 text-base text-slate-500">@{profile.username}</Text>
+        ) : null}
         <Text className="mt-2 text-center text-base text-slate-500">
           Groups and shared streaks arrive in Phase 3.
         </Text>

@@ -176,11 +176,7 @@ export function HabitDetailScreen({ navigation, route }: Props) {
         <Text className="mb-3 mt-8 text-base font-semibold text-slate-900">
           Last {WEEKS_SHOWN} weeks
         </Text>
-        <HistoryGrid
-          completedDates={completedDates ?? []}
-          today={todayLocalISO()}
-          color={color}
-        />
+        <HistoryGrid completedDates={completedDates ?? []} today={todayLocalISO()} color={color} />
 
         {error ? (
           <View testID="detail-error" className="mt-6 rounded-xl bg-red-50 px-4 py-3">

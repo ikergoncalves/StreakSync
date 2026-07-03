@@ -61,7 +61,9 @@ function HabitRow({ habit, completed, onToggle, onPress }: HabitRowProps) {
         // Generous hit area: this is the primary daily interaction.
         hitSlop={8}
         className="h-10 w-10 items-center justify-center rounded-full border-2"
-        style={completed ? { backgroundColor: color, borderColor: color } : { borderColor: '#cbd5e1' }}
+        style={
+          completed ? { backgroundColor: color, borderColor: color } : { borderColor: '#cbd5e1' }
+        }
       >
         {completed ? <Text className="text-base font-bold text-white">✓</Text> : null}
       </Pressable>

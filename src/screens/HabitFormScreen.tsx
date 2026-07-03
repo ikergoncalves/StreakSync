@@ -14,20 +14,7 @@ import { useHabitsStore } from '../store/habits';
 
 type Props = NativeStackScreenProps<AppStackParamList, 'HabitForm'>;
 
-export const HABIT_ICONS = [
-  '💪',
-  '🏃',
-  '📚',
-  '💧',
-  '🧘',
-  '😴',
-  '🥗',
-  '✍️',
-  '🎸',
-  '🧹',
-  '💊',
-  '🚶',
-];
+export const HABIT_ICONS = ['💪', '🏃', '📚', '💧', '🧘', '😴', '🥗', '✍️', '🎸', '🧹', '💊', '🚶'];
 
 export const HABIT_COLORS = [
   '#10b981', // emerald
@@ -126,10 +113,7 @@ export function HabitFormScreen({ navigation, route }: Props) {
           </Pressable>
         </View>
 
-        <ScrollView
-          contentContainerClassName="px-6 pb-8 pt-2"
-          keyboardShouldPersistTaps="handled"
-        >
+        <ScrollView contentContainerClassName="px-6 pb-8 pt-2" keyboardShouldPersistTaps="handled">
           {formError ? (
             <View testID="form-error" className="mb-4 rounded-xl bg-red-50 px-4 py-3">
               <Text className="text-sm text-red-700">{formError}</Text>
@@ -169,7 +153,9 @@ export function HabitFormScreen({ navigation, route }: Props) {
                       accessibilityState={{ selected: value === icon }}
                       onPress={() => onChange(icon)}
                       className={`h-11 w-11 items-center justify-center rounded-xl border ${
-                        value === icon ? 'border-emerald-600 bg-emerald-50' : 'border-slate-200 bg-white'
+                        value === icon
+                          ? 'border-emerald-600 bg-emerald-50'
+                          : 'border-slate-200 bg-white'
                       }`}
                     >
                       <Text className="text-xl">{icon}</Text>

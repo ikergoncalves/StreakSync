@@ -216,10 +216,7 @@ describe('toggle', () => {
     );
 
     await useHabitsStore.getState().toggle('habit-1', '2026-06-30');
-    expect(useHabitsStore.getState().completions['habit-1']).toEqual([
-      '2026-06-30',
-      '2026-07-01',
-    ]);
+    expect(useHabitsStore.getState().completions['habit-1']).toEqual(['2026-06-30', '2026-07-01']);
   });
 
   it('fails without touching state when the habit is unknown', async () => {
