@@ -198,16 +198,35 @@ describe('create', () => {
 describe('joinByCode', () => {
   it('joins, selects the group, and refreshes the list from the server', async () => {
     const group = makeGroup();
-    mockedGroupsApi.joinGroupByInviteCode.mockResolvedValue(group);
+    mockedGroupsApi.joinGroupByInviteCode.mockResolvedValue({ group, alreadyMember: false });
     mockedGroupsApi.listMyGroups.mockResolvedValue([{ ...group, member_count: 3 }]);
 
     const result = await useGroupsStore.getState().joinByCode('a7k2m9xz');
 
     expect(result.error).toBeNull();
+    expect(result.alreadyMember).toBe(false);
     expect(mockedGroupsApi.joinGroupByInviteCode).toHaveBeenCalledWith('a7k2m9xz');
     const state = useGroupsStore.getState();
     expect(state.activeGroupId).toBe('group-1');
     expect(state.myGroups).toEqual([{ ...group, member_count: 3 }]);
+  });
+
+  it('reports an existing membership without duplicating the group', async () => {
+    const group = makeGroup();
+    useGroupsStore.setState({
+      myGroups: [{ ...group, member_count: 3 }],
+      activeGroupId: 'group-2',
+    });
+    mockedGroupsApi.joinGroupByInviteCode.mockResolvedValue({ group, alreadyMember: true });
+    mockedGroupsApi.listMyGroups.mockResolvedValue([{ ...group, member_count: 3 }]);
+
+    const result = await useGroupsStore.getState().joinByCode('A7K2M9XZ');
+
+    expect(result).toEqual({ error: null, alreadyMember: true });
+    const state = useGroupsStore.getState();
+    // Not an error: the group is simply selected instead of added twice.
+    expect(state.myGroups).toHaveLength(1);
+    expect(state.activeGroupId).toBe('group-1');
   });
 
   it('surfaces the error for an invalid code', async () => {
@@ -218,6 +237,7 @@ describe('joinByCode', () => {
     const result = await useGroupsStore.getState().joinByCode('WRONG123');
 
     expect(result.error).toMatch(/invalid invite code/i);
+    expect(result.alreadyMember).toBe(false);
     expect(useGroupsStore.getState().myGroups).toEqual([]);
     expect(mockedGroupsApi.listMyGroups).not.toHaveBeenCalled();
   });

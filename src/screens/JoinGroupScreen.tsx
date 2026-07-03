@@ -1,6 +1,14 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, Text, TextInput, View } from 'react-native';
+import {
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 
 import { Button } from '../components/Button';
 import { Screen } from '../components/Screen';
@@ -34,6 +42,12 @@ export function JoinGroupScreen({ navigation, route }: Props) {
     if (result.error) {
       setError(result.error);
       return;
+    }
+    if (result.alreadyMember) {
+      // Not a failure — the code was valid, there is just nothing new to
+      // join. Say so instead of silently doing nothing; the native alert
+      // stays visible across the navigation below.
+      Alert.alert('Already a member', "You're already in this group.");
     }
     // Land on the Groups tab with the joined group already active.
     navigation.navigate('Tabs', { screen: 'Groups' });

@@ -40,6 +40,12 @@ interface GroupsResult {
   error: string | null;
 }
 
+interface JoinByCodeResult extends GroupsResult {
+  /** True when the code was valid but the user already belonged to the
+   * group — worth telling them, since nothing else visibly changes. */
+  alreadyMember: boolean;
+}
+
 interface GroupsState {
   myGroups: GroupWithMemberCount[];
   /** Which group's feed/leaderboard is shown. In-memory only for now —
@@ -60,7 +66,7 @@ interface GroupsState {
   loadGroups: () => Promise<void>;
   selectGroup: (groupId: string) => void;
   create: (name: string) => Promise<GroupsResult>;
-  joinByCode: (code: string) => Promise<GroupsResult>;
+  joinByCode: (code: string) => Promise<JoinByCodeResult>;
   leave: (groupId: string) => Promise<GroupsResult>;
   loadMembers: (groupId: string) => Promise<void>;
   loadActivity: (groupId: string) => Promise<void>;
@@ -120,7 +126,7 @@ export const useGroupsStore = create<GroupsState>((set, get) => ({
 
   joinByCode: async (code) => {
     try {
-      const group = await joinGroupByInviteCode(code);
+      const { group, alreadyMember } = await joinGroupByInviteCode(code);
       set((state) => ({
         myGroups: state.myGroups.some((existing) => existing.id === group.id)
           ? state.myGroups
@@ -133,9 +139,9 @@ export const useGroupsStore = create<GroupsState>((set, get) => ({
       // joined elsewhere). loadGroups preserves the selection made above and
       // swallows its own failures, so a flaky refresh can't fail the join.
       await get().loadGroups();
-      return { error: null };
+      return { error: null, alreadyMember };
     } catch (error) {
-      return { error: getGroupsErrorMessage(error) };
+      return { error: getGroupsErrorMessage(error), alreadyMember: false };
     }
   },
 

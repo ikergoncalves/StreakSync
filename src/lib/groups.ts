@@ -56,19 +56,28 @@ export async function createGroup(userId: string, name: string): Promise<Group> 
   return group;
 }
 
+export interface JoinGroupResult {
+  group: Group;
+  /** True when the code was valid but the caller already belonged to the
+   * group — the join was a no-op, not a new membership. */
+  alreadyMember: boolean;
+}
+
 /**
- * Joins a group via its invite code. This calls the SECURITY DEFINER RPC from
- * migration 0003 — the groups SELECT policy deliberately does not allow
- * looking up arbitrary groups by code from the client.
+ * Joins a group via its invite code. This calls the SECURITY DEFINER RPC
+ * from migration 0004 (0003 reworked) — the groups SELECT policy
+ * deliberately does not allow looking up arbitrary groups by code from the
+ * client.
  */
-export async function joinGroupByInviteCode(code: string): Promise<Group> {
+export async function joinGroupByInviteCode(code: string): Promise<JoinGroupResult> {
   const { data, error } = await supabase.rpc('join_group_by_invite_code', {
     p_invite_code: code.trim(),
   });
   if (error) {
     throw new Error(error.message);
   }
-  return data as Group;
+  const result = data as { group: Group; already_member: boolean };
+  return { group: result.group, alreadyMember: result.already_member };
 }
 
 /** Members of a group with their profiles, oldest joiner first. */
