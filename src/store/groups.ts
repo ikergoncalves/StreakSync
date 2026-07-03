@@ -4,6 +4,7 @@ import { useAuthStore } from './auth';
 import { listActivityEvents } from '../lib/activity';
 import {
   createGroup,
+  deleteGroup,
   GroupWithMemberCount,
   joinGroupByInviteCode,
   leaveGroup,
@@ -68,10 +69,38 @@ interface GroupsState {
   create: (name: string) => Promise<GroupsResult>;
   joinByCode: (code: string) => Promise<JoinByCodeResult>;
   leave: (groupId: string) => Promise<GroupsResult>;
+  /** Owner-only hard delete (see lib deleteGroup); cleans up like leave. */
+  deleteGroup: (groupId: string) => Promise<GroupsResult>;
   loadMembers: (groupId: string) => Promise<void>;
   loadActivity: (groupId: string) => Promise<void>;
   /** Prepends a realtime INSERT to the feed (deduped by id). */
   ingestRealtimeEvent: (event: ActivityEvent) => void;
+}
+
+/**
+ * State updates shared by leave and deleteGroup: drop the group and every
+ * per-group cache, moving the selection when it pointed at the removed
+ * group.
+ */
+function removeGroupFromState(state: GroupsState, groupId: string): Partial<GroupsState> {
+  const myGroups = state.myGroups.filter((group) => group.id !== groupId);
+  const membersByGroup = { ...state.membersByGroup };
+  const memberHabitsByGroup = { ...state.memberHabitsByGroup };
+  const memberCompletionsByGroup = { ...state.memberCompletionsByGroup };
+  const eventsByGroup = { ...state.eventsByGroup };
+  delete membersByGroup[groupId];
+  delete memberHabitsByGroup[groupId];
+  delete memberCompletionsByGroup[groupId];
+  delete eventsByGroup[groupId];
+  return {
+    myGroups,
+    membersByGroup,
+    memberHabitsByGroup,
+    memberCompletionsByGroup,
+    eventsByGroup,
+    activeGroupId:
+      state.activeGroupId === groupId ? (myGroups[0]?.id ?? null) : state.activeGroupId,
+  };
 }
 
 export const useGroupsStore = create<GroupsState>((set, get) => ({
@@ -152,26 +181,17 @@ export const useGroupsStore = create<GroupsState>((set, get) => ({
     }
     try {
       await leaveGroup(groupId, user.id);
-      set((state) => {
-        const myGroups = state.myGroups.filter((group) => group.id !== groupId);
-        const membersByGroup = { ...state.membersByGroup };
-        const memberHabitsByGroup = { ...state.memberHabitsByGroup };
-        const memberCompletionsByGroup = { ...state.memberCompletionsByGroup };
-        const eventsByGroup = { ...state.eventsByGroup };
-        delete membersByGroup[groupId];
-        delete memberHabitsByGroup[groupId];
-        delete memberCompletionsByGroup[groupId];
-        delete eventsByGroup[groupId];
-        return {
-          myGroups,
-          membersByGroup,
-          memberHabitsByGroup,
-          memberCompletionsByGroup,
-          eventsByGroup,
-          activeGroupId:
-            state.activeGroupId === groupId ? (myGroups[0]?.id ?? null) : state.activeGroupId,
-        };
-      });
+      set((state) => removeGroupFromState(state, groupId));
+      return { error: null };
+    } catch (error) {
+      return { error: getGroupsErrorMessage(error) };
+    }
+  },
+
+  deleteGroup: async (groupId) => {
+    try {
+      await deleteGroup(groupId);
+      set((state) => removeGroupFromState(state, groupId));
       return { error: null };
     } catch (error) {
       return { error: getGroupsErrorMessage(error) };

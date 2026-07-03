@@ -2,7 +2,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react-native
 
 import { GroupWithMemberCount } from '../../lib/groups';
 import { LeaderboardEntry } from '../../store/groups';
-import { ActivityEventWithProfile, Profile } from '../../types';
+import { ActivityEventWithProfile, GroupMember, Profile } from '../../types';
 import { GroupsScreen } from '../GroupsScreen';
 
 jest.mock('react-native-safe-area-context', () => ({
@@ -19,10 +19,17 @@ jest.mock('../../hooks/useGroupRealtime', () => ({
   useGroupRealtime: jest.fn(),
 }));
 
+// The screen only reads the signed-in user's id (for the sole-owner check);
+// the real auth store would drag in the supabase client.
+jest.mock('../../store/auth', () => ({
+  useAuthStore: (selector: (state: { user: { id: string } }) => unknown) =>
+    selector({ user: { id: 'user-1' } }),
+}));
+
 interface MockState {
   myGroups: GroupWithMemberCount[];
   activeGroupId: string | null;
-  membersByGroup: Record<string, unknown[]>;
+  membersByGroup: Record<string, GroupMember[]>;
   memberHabitsByGroup: Record<string, unknown[]>;
   memberCompletionsByGroup: Record<string, unknown[]>;
   eventsByGroup: Record<string, ActivityEventWithProfile[]>;
@@ -34,6 +41,7 @@ interface MockState {
   create: jest.Mock;
   joinByCode: jest.Mock;
   leave: jest.Mock;
+  deleteGroup: jest.Mock;
   loadMembers: jest.Mock;
   loadActivity: jest.Mock;
   ingestRealtimeEvent: jest.Mock;
@@ -85,6 +93,16 @@ function makeProfile(id: string, username: string, displayName: string): Profile
   };
 }
 
+function makeMember(userId: string, role: GroupMember['role']): GroupMember {
+  return {
+    group_id: 'group-1',
+    user_id: userId,
+    role,
+    joined_at: '2026-07-01T00:00:00Z',
+    profile: makeProfile(userId, `user${userId}`, `User ${userId}`),
+  };
+}
+
 type ScreenProps = Parameters<typeof GroupsScreen>[0];
 
 const navigation = {
@@ -116,6 +134,7 @@ beforeEach(() => {
     create: jest.fn(),
     joinByCode: jest.fn(),
     leave: jest.fn(),
+    deleteGroup: jest.fn(),
     loadMembers: jest.fn().mockResolvedValue(undefined),
     loadActivity: jest.fn().mockResolvedValue(undefined),
     ingestRealtimeEvent: jest.fn(),
@@ -221,5 +240,33 @@ describe('GroupsScreen', () => {
     await fireEvent.press(screen.getByTestId('group-chip-group-2'));
 
     expect(mockState.selectGroup).toHaveBeenCalledWith('group-2');
+  });
+
+  it('offers "Delete group" instead of "Leave" to the sole owner', async () => {
+    mockState.myGroups = [makeGroup()];
+    mockState.activeGroupId = 'group-1';
+    // Signed-in user (user-1, from the auth mock) holds the only owner role.
+    mockState.membersByGroup = {
+      'group-1': [makeMember('user-1', 'owner'), makeMember('user-2', 'member')],
+    };
+
+    await renderScreen();
+
+    expect(screen.getByTestId('delete-group-button')).toBeTruthy();
+    expect(screen.getByText('Delete group')).toBeTruthy();
+    expect(screen.queryByTestId('leave-group-button')).toBeNull();
+  });
+
+  it('offers "Leave" to a regular member', async () => {
+    mockState.myGroups = [makeGroup()];
+    mockState.activeGroupId = 'group-1';
+    mockState.membersByGroup = {
+      'group-1': [makeMember('user-2', 'owner'), makeMember('user-1', 'member')],
+    };
+
+    await renderScreen();
+
+    expect(screen.getByTestId('leave-group-button')).toBeTruthy();
+    expect(screen.queryByTestId('delete-group-button')).toBeNull();
   });
 });

@@ -1,5 +1,6 @@
 import { randomUUID } from 'expo-crypto';
 
+import { isSoleOwner } from './membership';
 import { supabase } from './supabase';
 import { Group, GroupMember, Habit, HabitCompletion } from '../types';
 
@@ -132,20 +133,20 @@ export const SOLE_OWNER_MESSAGE =
 
 /**
  * Removes the signed-in user from a group. Blocked when they are the sole
- * owner: the group would be left without anyone who can manage it.
+ * owner: the group would be left without anyone who can manage it. (The UI
+ * offers deleteGroup instead in that case; this server check is the
+ * backstop.)
  */
 export async function leaveGroup(groupId: string, userId: string): Promise<void> {
   const { data, error } = await supabase
     .from('group_members')
-    .select('user_id')
+    .select('user_id, role')
     .eq('group_id', groupId)
     .eq('role', 'owner');
   if (error) {
     throw error;
   }
-  const owners = (data ?? []) as { user_id: string }[];
-  const isOwner = owners.some((owner) => owner.user_id === userId);
-  if (isOwner && !owners.some((owner) => owner.user_id !== userId)) {
+  if (isSoleOwner((data ?? []) as Pick<GroupMember, 'user_id' | 'role'>[], userId)) {
     throw new Error(SOLE_OWNER_MESSAGE);
   }
 
@@ -156,5 +157,20 @@ export async function leaveGroup(groupId: string, userId: string): Promise<void>
     .eq('user_id', userId);
   if (deleteError) {
     throw deleteError;
+  }
+}
+
+/**
+ * Hard-deletes a group. Unlike habits there is no soft delete: groups and
+ * their memberships/feed are not part of the Phase 4 offline-sync scope, and
+ * group_members plus activity_events cascade on groups.id (0001 schema), so
+ * removing the group row is sufficient. Only the owner can do this — the
+ * groups_delete_owner RLS policy (0002) enforces it server-side; for anyone
+ * else the delete simply matches no rows.
+ */
+export async function deleteGroup(groupId: string): Promise<void> {
+  const { error } = await supabase.from('groups').delete().eq('id', groupId);
+  if (error) {
+    throw error;
   }
 }

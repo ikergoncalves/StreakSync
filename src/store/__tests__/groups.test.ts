@@ -18,6 +18,7 @@ jest.mock('../../lib/groups', () => ({
   listGroupMembers: jest.fn(),
   listMemberHabitData: jest.fn(),
   leaveGroup: jest.fn(),
+  deleteGroup: jest.fn(),
 }));
 
 jest.mock('../../lib/activity', () => ({
@@ -273,6 +274,43 @@ describe('leave', () => {
     const result = await useGroupsStore.getState().leave('group-1');
 
     expect(result.error).toMatch(/only owner/i);
+    expect(useGroupsStore.getState().myGroups).toHaveLength(1);
+    expect(useGroupsStore.getState().activeGroupId).toBe('group-1');
+  });
+});
+
+describe('deleteGroup', () => {
+  it('removes the group and its cached data, moving the selection', async () => {
+    useGroupsStore.setState({
+      myGroups: [makeGroup(), makeGroup({ id: 'group-2', name: 'Runners' })],
+      activeGroupId: 'group-1',
+      membersByGroup: { 'group-1': [makeMember('user-1', 'alice')] },
+      memberHabitsByGroup: { 'group-1': [makeHabit('habit-1', 'user-1')] },
+      memberCompletionsByGroup: { 'group-1': [makeCompletion('habit-1', 'user-1', today)] },
+      eventsByGroup: { 'group-1': [makeEvent()] },
+    });
+    mockedGroupsApi.deleteGroup.mockResolvedValue(undefined);
+
+    const result = await useGroupsStore.getState().deleteGroup('group-1');
+
+    expect(result.error).toBeNull();
+    expect(mockedGroupsApi.deleteGroup).toHaveBeenCalledWith('group-1');
+    const state = useGroupsStore.getState();
+    expect(state.myGroups.map((group) => group.id)).toEqual(['group-2']);
+    expect(state.activeGroupId).toBe('group-2');
+    expect(state.membersByGroup['group-1']).toBeUndefined();
+    expect(state.memberHabitsByGroup['group-1']).toBeUndefined();
+    expect(state.memberCompletionsByGroup['group-1']).toBeUndefined();
+    expect(state.eventsByGroup['group-1']).toBeUndefined();
+  });
+
+  it('returns an error and keeps the group when the delete fails', async () => {
+    useGroupsStore.setState({ myGroups: [makeGroup()], activeGroupId: 'group-1' });
+    mockedGroupsApi.deleteGroup.mockRejectedValue(new Error('Network request failed'));
+
+    const result = await useGroupsStore.getState().deleteGroup('group-1');
+
+    expect(result.error).toMatch(/connection/i);
     expect(useGroupsStore.getState().myGroups).toHaveLength(1);
     expect(useGroupsStore.getState().activeGroupId).toBe('group-1');
   });

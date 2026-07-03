@@ -19,8 +19,10 @@ import { Button } from '../components/Button';
 import { Screen } from '../components/Screen';
 import { useGroupRealtime } from '../hooks/useGroupRealtime';
 import { GroupWithMemberCount } from '../lib/groups';
+import { isSoleOwner } from '../lib/membership';
 import { formatRelativeTime } from '../lib/relativeTime';
 import { AppStackParamList, AppTabParamList } from '../navigation/types';
+import { useAuthStore } from '../store/auth';
 import { LeaderboardEntry, selectLeaderboard, useGroupsStore } from '../store/groups';
 import { ActivityEventWithProfile } from '../types';
 
@@ -98,10 +100,16 @@ function GroupSelector({
 
 function InviteCard({
   group,
+  soleOwner,
   onLeave,
+  onDelete,
 }: {
   group: GroupWithMemberCount;
+  /** Sole owners can't leave (the group would be unmanageable) — they
+   * delete instead. */
+  soleOwner: boolean;
   onLeave: (group: GroupWithMemberCount) => void;
+  onDelete: (group: GroupWithMemberCount) => void;
 }) {
   const [copied, setCopied] = useState(false);
 
@@ -149,15 +157,27 @@ function InviteCard({
         <View className="flex-1 pr-3">
           <Button title="Invite friends" onPress={() => void handleShare()} testID="share-button" />
         </View>
-        <Pressable
-          testID="leave-group-button"
-          accessibilityRole="button"
-          accessibilityLabel={`Leave ${group.name}`}
-          onPress={() => onLeave(group)}
-          className="rounded-lg px-3 py-2 active:bg-red-50"
-        >
-          <Text className="text-sm font-medium text-red-600">Leave</Text>
-        </Pressable>
+        {soleOwner ? (
+          <Pressable
+            testID="delete-group-button"
+            accessibilityRole="button"
+            accessibilityLabel={`Delete ${group.name}`}
+            onPress={() => onDelete(group)}
+            className="rounded-lg px-3 py-2 active:bg-red-50"
+          >
+            <Text className="text-sm font-medium text-red-600">Delete group</Text>
+          </Pressable>
+        ) : (
+          <Pressable
+            testID="leave-group-button"
+            accessibilityRole="button"
+            accessibilityLabel={`Leave ${group.name}`}
+            onPress={() => onLeave(group)}
+            className="rounded-lg px-3 py-2 active:bg-red-50"
+          >
+            <Text className="text-sm font-medium text-red-600">Leave</Text>
+          </Pressable>
+        )}
       </View>
     </View>
   );
@@ -224,6 +244,7 @@ export function GroupsScreen({ navigation }: Props) {
   const loadGroups = useGroupsStore((state) => state.loadGroups);
   const selectGroup = useGroupsStore((state) => state.selectGroup);
   const leave = useGroupsStore((state) => state.leave);
+  const removeGroup = useGroupsStore((state) => state.deleteGroup);
   const loadMembers = useGroupsStore((state) => state.loadMembers);
   const loadActivity = useGroupsStore((state) => state.loadActivity);
   const members = useGroupsStore((state) =>
@@ -238,6 +259,7 @@ export function GroupsScreen({ navigation }: Props) {
   const events = useGroupsStore((state) =>
     activeGroupId ? state.eventsByGroup[activeGroupId] : undefined,
   );
+  const userId = useAuthStore((state) => state.user?.id);
   const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -271,6 +293,9 @@ export function GroupsScreen({ navigation }: Props) {
   }, [activeGroupId, members, memberHabits, memberCompletions]);
 
   const activeGroup = myGroups.find((group) => group.id === activeGroupId);
+  // Same rule the leave flow enforces server-side (lib leaveGroup). Until
+  // members load this is false, and the server check remains the backstop.
+  const soleOwner = userId ? isSoleOwner(members ?? [], userId) : false;
 
   const handleRefresh = useCallback(() => {
     if (activeGroupId) {
@@ -299,6 +324,31 @@ export function GroupsScreen({ navigation }: Props) {
     [leave],
   );
 
+  // Same confirmation pattern as HabitDetailScreen's delete.
+  const handleDelete = useCallback(
+    (group: GroupWithMemberCount) => {
+      Alert.alert(
+        'Delete group',
+        `"${group.name}", its feed, and all memberships will be removed for everyone. This cannot be undone.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete',
+            style: 'destructive',
+            onPress: () => {
+              void removeGroup(group.id).then((result) => {
+                if (result.error) {
+                  setActionError(result.error);
+                }
+              });
+            },
+          },
+        ],
+      );
+    },
+    [removeGroup],
+  );
+
   const error = actionError ?? storeError;
 
   const header = (
@@ -308,7 +358,12 @@ export function GroupsScreen({ navigation }: Props) {
       ) : null}
       {activeGroup ? (
         <>
-          <InviteCard group={activeGroup} onLeave={handleLeave} />
+          <InviteCard
+            group={activeGroup}
+            soleOwner={soleOwner}
+            onLeave={handleLeave}
+            onDelete={handleDelete}
+          />
           <Text className="mb-2 text-lg font-bold text-slate-900">Leaderboard</Text>
           <View className="mb-4 rounded-2xl bg-white px-4 shadow-sm">
             {leaderboard.length === 0 ? (
