@@ -48,7 +48,16 @@ export const habitSchema = z
     path: ['targetDaysPerWeek'],
   });
 
+export const groupSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(1, 'Enter a group name')
+    .max(50, 'Keep the name under 50 characters'),
+});
+
 export type SignInInput = z.infer<typeof signInSchema>;
 export type SignUpInput = z.infer<typeof signUpSchema>;
 export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
 export type HabitFormInput = z.infer<typeof habitSchema>;
+export type GroupFormInput = z.infer<typeof groupSchema>;
