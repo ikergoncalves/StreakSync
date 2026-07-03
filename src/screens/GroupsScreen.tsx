@@ -184,7 +184,10 @@ function LeaderboardRow({ entry, rank }: { entry: LeaderboardEntry; rank: number
 function FeedRow({ event }: { event: ActivityEventWithProfile }) {
   const { icon, message } = eventPresentation(event);
   return (
-    <View testID={`feed-row-${event.id}`} className="mb-3 flex-row rounded-2xl bg-white p-4 shadow-sm">
+    <View
+      testID={`feed-row-${event.id}`}
+      className="mb-3 flex-row rounded-2xl bg-white p-4 shadow-sm"
+    >
       <Text className="text-xl">{icon}</Text>
       <View className="ml-3 flex-1">
         <Text className="text-sm text-slate-900">{message}</Text>

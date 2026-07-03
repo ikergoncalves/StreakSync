@@ -61,9 +61,7 @@ function publishActivity(events: ActivityEventData[]): void {
   if (!user) {
     return;
   }
-  const sharedGroups = useGroupsStore
-    .getState()
-    .myGroups.filter((group) => group.member_count > 1);
+  const sharedGroups = useGroupsStore.getState().myGroups.filter((group) => group.member_count > 1);
   for (const group of sharedGroups) {
     for (const event of events) {
       void insertActivityEvent({ groupId: group.id, userId: user.id, event }).catch(

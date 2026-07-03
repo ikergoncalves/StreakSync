@@ -124,13 +124,15 @@ export const useGroupsStore = create<GroupsState>((set, get) => ({
       set((state) => ({
         myGroups: state.myGroups.some((existing) => existing.id === group.id)
           ? state.myGroups
-          : // member_count is refreshed by the next loadGroups; +1 for self is
-            // the best guess until then.
+          : // member_count is refreshed by the loadGroups below; +1 for self
+            // is the best guess should that refresh fail.
             [...state.myGroups, { ...group, member_count: 1 }],
         activeGroupId: group.id,
       }));
-      // Pull the real member count (and any groups created elsewhere).
-      void get().loadGroups();
+      // Refresh from the server for the real member count (and any groups
+      // joined elsewhere). loadGroups preserves the selection made above and
+      // swallows its own failures, so a flaky refresh can't fail the join.
+      await get().loadGroups();
       return { error: null };
     } catch (error) {
       return { error: getGroupsErrorMessage(error) };
@@ -236,10 +238,7 @@ export interface LeaderboardEntry {
  * alphabetically by username.
  */
 export function selectLeaderboard(
-  state: Pick<
-    GroupsState,
-    'membersByGroup' | 'memberHabitsByGroup' | 'memberCompletionsByGroup'
-  >,
+  state: Pick<GroupsState, 'membersByGroup' | 'memberHabitsByGroup' | 'memberCompletionsByGroup'>,
   groupId: string,
   today: string = todayLocalISO(),
 ): LeaderboardEntry[] {

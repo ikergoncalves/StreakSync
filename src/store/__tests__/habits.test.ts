@@ -1,5 +1,9 @@
+import * as activityApi from '../../lib/activity';
+import { GroupWithMemberCount } from '../../lib/groups';
 import * as habitsApi from '../../lib/habits';
+import { addDays, todayLocalISO } from '../../lib/streaks';
 import { Habit, HabitCompletion } from '../../types';
+import { useGroupsStore } from '../groups';
 import { selectHabitStreak, selectIsCompleted, useHabitsStore } from '../habits';
 
 jest.mock('../../lib/habits', () => ({
@@ -11,6 +15,24 @@ jest.mock('../../lib/habits', () => ({
   toggleCompletion: jest.fn(),
 }));
 
+// The activity emitter writes through this; mocked so tests can assert the
+// exact events a mutation produced.
+jest.mock('../../lib/activity', () => ({
+  listActivityEvents: jest.fn(),
+  insertActivityEvent: jest.fn(),
+}));
+
+// The groups store (read by the emitter for fan-out) is real, but its data
+// layer touches the supabase client, so stub that out.
+jest.mock('../../lib/groups', () => ({
+  listMyGroups: jest.fn(),
+  createGroup: jest.fn(),
+  joinGroupByInviteCode: jest.fn(),
+  listGroupMembers: jest.fn(),
+  listMemberHabitData: jest.fn(),
+  leaveGroup: jest.fn(),
+}));
+
 // The auth store pulls in the supabase client (which needs env config); the
 // habits store only reads the signed-in user from it, so stub the module.
 jest.mock('../auth', () => ({
@@ -18,6 +40,7 @@ jest.mock('../auth', () => ({
 }));
 
 const mockedApi = habitsApi as jest.Mocked<typeof habitsApi>;
+const mockedActivityApi = activityApi as jest.Mocked<typeof activityApi>;
 
 function makeHabit(overrides: Partial<Habit> = {}): Habit {
   return {
@@ -51,6 +74,9 @@ function makeCompletion(overrides: Partial<HabitCompletion> = {}): HabitCompleti
 beforeEach(() => {
   jest.clearAllMocks();
   useHabitsStore.setState({ habits: [], completions: {}, isLoading: false, error: null });
+  // No groups by default: the pre-Phase-3 tests run with emission disabled.
+  useGroupsStore.setState({ myGroups: [] });
+  mockedActivityApi.insertActivityEvent.mockResolvedValue(undefined);
 });
 
 describe('load', () => {
@@ -256,6 +282,138 @@ describe('selectHabitStreak', () => {
     expect(selectHabitStreak({ habits: [], completions: {} }, 'missing')).toEqual({
       current: 0,
       longest: 0,
+    });
+  });
+});
+
+describe('activity events', () => {
+  const today = todayLocalISO();
+  const daysAgo = (days: number) => addDays(today, -days);
+
+  function makeGroup(id: string, memberCount: number): GroupWithMemberCount {
+    return {
+      id,
+      name: 'Morning crew',
+      invite_code: 'A7K2M9XZ',
+      owner_id: 'user-1',
+      created_at: '2026-07-01T00:00:00Z',
+      updated_at: '2026-07-01T00:00:00Z',
+      member_count: memberCount,
+    };
+  }
+
+  it('emits nothing for a user in zero groups', async () => {
+    useHabitsStore.setState({ habits: [makeHabit()], completions: {} });
+    mockedApi.toggleCompletion.mockResolvedValue(undefined);
+
+    await useHabitsStore.getState().toggle('habit-1');
+
+    expect(mockedActivityApi.insertActivityEvent).not.toHaveBeenCalled();
+  });
+
+  it('emits nothing to groups where the user is the only member', async () => {
+    useGroupsStore.setState({ myGroups: [makeGroup('group-solo', 1)] });
+    useHabitsStore.setState({ habits: [makeHabit()], completions: {} });
+    mockedApi.toggleCompletion.mockResolvedValue(undefined);
+
+    await useHabitsStore.getState().toggle('habit-1');
+
+    expect(mockedActivityApi.insertActivityEvent).not.toHaveBeenCalled();
+  });
+
+  it('emits streak_continued to every shared group when a toggle extends a streak', async () => {
+    useGroupsStore.setState({
+      myGroups: [makeGroup('group-1', 2), makeGroup('group-2', 3), makeGroup('group-solo', 1)],
+    });
+    useHabitsStore.setState({
+      habits: [makeHabit()],
+      completions: { 'habit-1': [daysAgo(1)] },
+    });
+    mockedApi.toggleCompletion.mockResolvedValue(undefined);
+
+    await useHabitsStore.getState().toggle('habit-1');
+
+    const expectedEvent = {
+      type: 'streak_continued',
+      payload: expect.objectContaining({ habit_id: 'habit-1', current_streak: 2 }),
+    };
+    expect(mockedActivityApi.insertActivityEvent).toHaveBeenCalledTimes(2);
+    expect(mockedActivityApi.insertActivityEvent).toHaveBeenCalledWith({
+      groupId: 'group-1',
+      userId: 'user-1',
+      event: expectedEvent,
+    });
+    expect(mockedActivityApi.insertActivityEvent).toHaveBeenCalledWith({
+      groupId: 'group-2',
+      userId: 'user-1',
+      event: expectedEvent,
+    });
+  });
+
+  it('emits streak_broken when a check-in observes a missed gap', async () => {
+    useGroupsStore.setState({ myGroups: [makeGroup('group-1', 2)] });
+    useHabitsStore.setState({
+      habits: [makeHabit()],
+      // A 3-day run that ended three days ago; yesterday and the day before
+      // were missed, so today's check-in is the first to see the break.
+      completions: { 'habit-1': [daysAgo(5), daysAgo(4), daysAgo(3)] },
+    });
+    mockedApi.toggleCompletion.mockResolvedValue(undefined);
+
+    await useHabitsStore.getState().toggle('habit-1');
+
+    expect(mockedActivityApi.insertActivityEvent).toHaveBeenCalledWith({
+      groupId: 'group-1',
+      userId: 'user-1',
+      event: {
+        type: 'streak_broken',
+        payload: expect.objectContaining({ habit_id: 'habit-1', previous_streak: 3 }),
+      },
+    });
+    expect(mockedActivityApi.insertActivityEvent).toHaveBeenCalledWith({
+      groupId: 'group-1',
+      userId: 'user-1',
+      event: {
+        type: 'streak_continued',
+        payload: expect.objectContaining({ current_streak: 1 }),
+      },
+    });
+  });
+
+  it('emits nothing when a completion is unchecked', async () => {
+    useGroupsStore.setState({ myGroups: [makeGroup('group-1', 2)] });
+    useHabitsStore.setState({
+      habits: [makeHabit()],
+      completions: { 'habit-1': [today] },
+    });
+    mockedApi.toggleCompletion.mockResolvedValue(undefined);
+
+    await useHabitsStore.getState().toggle('habit-1');
+
+    expect(mockedActivityApi.insertActivityEvent).not.toHaveBeenCalled();
+  });
+
+  it('emits habit_created to shared groups when a habit is created', async () => {
+    useGroupsStore.setState({ myGroups: [makeGroup('group-1', 2)] });
+    const habit = makeHabit();
+    mockedApi.createHabit.mockResolvedValue(habit);
+
+    await useHabitsStore.getState().create({
+      name: 'Read',
+      description: null,
+      icon: '📚',
+      color: '#10b981',
+      frequency: 'daily',
+      target_days_per_week: null,
+    });
+
+    expect(mockedActivityApi.insertActivityEvent).toHaveBeenCalledWith({
+      groupId: 'group-1',
+      userId: 'user-1',
+      event: {
+        type: 'habit_created',
+        payload: { habit_id: 'habit-1', habit_name: 'Read', habit_icon: '📚' },
+      },
     });
   });
 });
