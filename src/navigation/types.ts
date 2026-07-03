@@ -8,6 +8,7 @@ export type AuthStackParamList = {
 
 export type AppTabParamList = {
   Today: undefined;
+  Groups: undefined;
   Profile: undefined;
 };
 
@@ -16,4 +17,7 @@ export type AppStackParamList = {
   /** Create when habitId is absent, edit when present. */
   HabitForm: { habitId?: string } | undefined;
   HabitDetail: { habitId: string };
+  CreateGroup: undefined;
+  /** Also the deep-link target (streaksync://join/CODE) — code pre-fills the input. */
+  JoinGroup: { code?: string } | undefined;
 };
