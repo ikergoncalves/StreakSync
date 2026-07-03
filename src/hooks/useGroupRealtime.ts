@@ -1,3 +1,4 @@
+import { RealtimeChannel } from '@supabase/supabase-js';
 import { useEffect } from 'react';
 
 import { supabase } from '../lib/supabase';
@@ -22,28 +23,62 @@ export function useGroupRealtime(groupId: string | null): void {
     if (!groupId) {
       return;
     }
-    const channel = supabase
-      .channel(`group-activity-${groupId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'activity_events',
-          filter: `group_id=eq.${groupId}`,
-        },
-        (payload) => {
-          const store = useGroupsStore.getState();
-          store.ingestRealtimeEvent(payload.new as ActivityEvent);
-          void store.loadMembers(groupId);
-        },
-      )
-      .subscribe();
+
+    const topic = `group-activity-${groupId}`;
+    // Owned by this effect run only. Kept in the effect closure (not a ref a
+    // later run could clobber) so an out-of-order cleanup always removes
+    // exactly the channel it created, never a newer run's.
+    let channel: RealtimeChannel | null = null;
+    let cancelled = false;
+
+    const subscribe = async () => {
+      // supabase.channel(topic) returns the EXISTING instance while a channel
+      // with the same topic is still tracked by the client — including one
+      // whose removeChannel() from a previous effect run has not completed
+      // yet (removal is async). Calling .on() on that already-subscribed
+      // instance throws "cannot add 'postgres_changes' callbacks for
+      // realtime:<topic> after 'subscribe()'". So: defensively remove every
+      // tracked channel for this topic and WAIT for the removals to finish
+      // before creating a fresh channel.
+      const stale = supabase
+        .getChannels()
+        // The client stores topics with a "realtime:" prefix; match the bare
+        // form too in case that internal detail changes.
+        .filter((tracked) => tracked.topic === `realtime:${topic}` || tracked.topic === topic);
+      await Promise.all(stale.map((tracked) => supabase.removeChannel(tracked)));
+      if (cancelled) {
+        // Cleanup ran while we were waiting; a newer effect run (or none)
+        // owns the topic now.
+        return;
+      }
+
+      channel = supabase
+        .channel(topic)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'activity_events',
+            filter: `group_id=eq.${groupId}`,
+          },
+          (payload) => {
+            const store = useGroupsStore.getState();
+            store.ingestRealtimeEvent(payload.new as ActivityEvent);
+            void store.loadMembers(groupId);
+          },
+        )
+        .subscribe();
+    };
+    void subscribe();
 
     // Tear the channel down when the active group changes or the screen
     // unmounts; otherwise every past group would keep streaming events.
     return () => {
-      void supabase.removeChannel(channel);
+      cancelled = true;
+      if (channel) {
+        void supabase.removeChannel(channel);
+      }
     };
   }, [groupId]);
 }
