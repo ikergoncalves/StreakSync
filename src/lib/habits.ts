@@ -1,10 +1,8 @@
 import { randomUUID } from 'expo-crypto';
 
+import { UNIQUE_VIOLATION } from './postgresErrors';
 import { supabase } from './supabase';
 import { Habit, HabitCompletion, HabitFrequency } from '../types';
-
-// Postgres error code for unique constraint violations.
-const UNIQUE_VIOLATION = '23505';
 
 export interface HabitInput {
   name: string;

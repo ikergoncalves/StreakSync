@@ -34,7 +34,7 @@ npm install
 
 1. Create a free project at [supabase.com/dashboard](https://supabase.com/dashboard).
 2. Apply the database migrations, in order, from `supabase/migrations/`:
-   - **SQL editor (simplest):** open _SQL Editor_ in the dashboard and run the contents of each `NNNN_*.sql` file in ascending order (`0001_initial_schema.sql`, `0002_row_level_security.sql`, `0003_group_join_rpc.sql`).
+   - **SQL editor (simplest):** open _SQL Editor_ in the dashboard and run the contents of each `NNNN_*.sql` file in ascending order (`0001_initial_schema.sql` through `0005_activity_event_dedup.sql`).
    - **Supabase CLI (alternative):** `supabase link --project-ref <your-ref>` then `supabase db push`.
 3. **Enable Realtime** for the activity feed: in the dashboard go to _Database → Replication_ and toggle on the `activity_events` table (this adds it to the `supabase_realtime` publication; it can't be done from a migration here). Without it the app still works, but group activity only appears after a manual refresh.
 

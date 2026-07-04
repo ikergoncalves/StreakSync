@@ -43,7 +43,11 @@ describe('detectStreakActivity', () => {
     expect(events).toEqual([
       expect.objectContaining({
         type: 'streak_continued',
-        payload: expect.objectContaining({ current_streak: 1, habit_name: 'Read' }),
+        payload: expect.objectContaining({
+          current_streak: 1,
+          habit_name: 'Read',
+          event_date: TODAY,
+        }),
       }),
     ]);
   });
@@ -81,11 +85,11 @@ describe('detectStreakActivity', () => {
     expect(events).toEqual([
       expect.objectContaining({
         type: 'streak_broken',
-        payload: expect.objectContaining({ previous_streak: 3 }),
+        payload: expect.objectContaining({ previous_streak: 3, event_date: TODAY }),
       }),
       expect.objectContaining({
         type: 'streak_continued',
-        payload: expect.objectContaining({ current_streak: 1 }),
+        payload: expect.objectContaining({ current_streak: 1, event_date: TODAY }),
       }),
     ]);
   });
@@ -112,7 +116,9 @@ describe('detectStreakActivity', () => {
     expect(events).toEqual([
       expect.objectContaining({
         type: 'streak_continued',
-        payload: expect.objectContaining({ current_streak: 1 }),
+        // The dedup date is the backfilled date, not today: re-backfilling
+        // the same date must collide, a different date must not.
+        payload: expect.objectContaining({ current_streak: 1, event_date: yesterday }),
       }),
     ]);
   });

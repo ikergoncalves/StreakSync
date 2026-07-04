@@ -201,6 +201,7 @@ describe('GroupsScreen', () => {
             habit_icon: '📚',
             frequency: 'daily',
             current_streak: 2,
+            event_date: '2026-07-04',
           },
           created_at: new Date().toISOString(),
           profile: makeProfile('user-2', 'bob', 'Bob'),

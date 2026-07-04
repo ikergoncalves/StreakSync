@@ -71,10 +71,35 @@ function publishActivity(events: ActivityEventData[]): void {
   }
 }
 
+// Streak events already published this session, keyed by type/habit/date but
+// not by group: one publish fans out to every shared group at once. Toggling
+// the same completion off and on again re-detects the same "increase", and
+// there is no point re-attempting inserts the database would reject anyway.
+// The DB's partial unique indexes (migration 0005) remain the real
+// guarantee — this set is only the client-side half of the dedup.
+const publishedStreakEvents = new Set<string>();
+
+/** Clears the session dedup registry (used by tests; a future sign-out flow
+ * should call it too so a next account starts fresh). */
+export function resetPublishedActivityEvents(): void {
+  publishedStreakEvents.clear();
+}
+
 // Phase 3 hook: every completion mutation ends here after it succeeds, so no
 // refactoring of the toggle flow was needed to add activity events.
 function notifyCompletionChanged(change: CompletionChange): void {
-  publishActivity(detectStreakActivity(change));
+  const events = detectStreakActivity(change).filter((event) => {
+    if (event.type !== 'streak_continued' && event.type !== 'streak_broken') {
+      return true;
+    }
+    const key = `${event.type}:${event.payload.habit_id}:${event.payload.event_date}`;
+    if (publishedStreakEvents.has(key)) {
+      return false;
+    }
+    publishedStreakEvents.add(key);
+    return true;
+  });
+  publishActivity(events);
 }
 
 interface HabitsState {

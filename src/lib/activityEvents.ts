@@ -68,7 +68,9 @@ export function detectStreakActivity({
     if (endedStreak >= BROKEN_STREAK_THRESHOLD) {
       events.push({
         type: 'streak_broken',
-        payload: { ...habitFields, previous_streak: endedStreak },
+        // event_date: when the gap was OBSERVED (today's check-in), not when
+        // the streak actually lapsed.
+        payload: { ...habitFields, previous_streak: endedStreak, event_date: today },
       });
     }
   }
@@ -76,7 +78,9 @@ export function detectStreakActivity({
   if (afterCurrent > beforeCurrent) {
     events.push({
       type: 'streak_continued',
-      payload: { ...habitFields, current_streak: afterCurrent },
+      // event_date: the date whose check-in caused the increase (equals the
+      // toggled date, which for backfills is not today).
+      payload: { ...habitFields, current_streak: afterCurrent, event_date: date },
     });
   }
 

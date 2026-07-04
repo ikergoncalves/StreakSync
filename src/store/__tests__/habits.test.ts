@@ -4,7 +4,12 @@ import * as habitsApi from '../../lib/habits';
 import { addDays, todayLocalISO } from '../../lib/streaks';
 import { Habit, HabitCompletion } from '../../types';
 import { useGroupsStore } from '../groups';
-import { selectHabitStreak, selectIsCompleted, useHabitsStore } from '../habits';
+import {
+  resetPublishedActivityEvents,
+  selectHabitStreak,
+  selectIsCompleted,
+  useHabitsStore,
+} from '../habits';
 
 jest.mock('../../lib/habits', () => ({
   listHabits: jest.fn(),
@@ -77,6 +82,8 @@ beforeEach(() => {
   // No groups by default: the pre-Phase-3 tests run with emission disabled.
   useGroupsStore.setState({ myGroups: [] });
   mockedActivityApi.insertActivityEvent.mockResolvedValue(undefined);
+  // The session dedup registry outlives store resets; clear it per test.
+  resetPublishedActivityEvents();
 });
 
 describe('load', () => {
@@ -406,6 +413,33 @@ describe('activity events', () => {
       event: {
         type: 'streak_continued',
         payload: expect.objectContaining({ current_streak: 1 }),
+      },
+    });
+  });
+
+  it('publishes streak_continued only once when a completion is re-toggled the same day', async () => {
+    useGroupsStore.setState({ myGroups: [makeGroup('group-1', 2)] });
+    useHabitsStore.setState({
+      habits: [makeHabit()],
+      completions: { 'habit-1': [daysAgo(1)] },
+    });
+    mockedApi.toggleCompletion.mockResolvedValue(undefined);
+
+    // On, off, and on again: one logical action from the user's point of
+    // view, and one streak_continued for this habit/date. The session
+    // registry skips the re-publish client-side; migration 0005's unique
+    // index is the backstop when the app restarts and re-attempts it.
+    await useHabitsStore.getState().toggle('habit-1');
+    await useHabitsStore.getState().toggle('habit-1');
+    await useHabitsStore.getState().toggle('habit-1');
+
+    expect(mockedActivityApi.insertActivityEvent).toHaveBeenCalledTimes(1);
+    expect(mockedActivityApi.insertActivityEvent).toHaveBeenCalledWith({
+      groupId: 'group-1',
+      userId: 'user-1',
+      event: {
+        type: 'streak_continued',
+        payload: expect.objectContaining({ habit_id: 'habit-1', event_date: today }),
       },
     });
   });

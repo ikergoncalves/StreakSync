@@ -1,5 +1,6 @@
 import { randomUUID } from 'expo-crypto';
 
+import { UNIQUE_VIOLATION } from './postgresErrors';
 import { supabase } from './supabase';
 import { ActivityEventData, ActivityEventWithProfile } from '../types';
 
@@ -30,7 +31,12 @@ export interface InsertActivityEventInput {
   event: ActivityEventData;
 }
 
-/** Thin insert wrapper; the id is client-generated like every other table. */
+/**
+ * Thin insert wrapper; the id is client-generated like every other table.
+ * Idempotent like toggleCompletion: migration 0005's partial unique indexes
+ * reject a duplicate of the same logical event (same group/habit/date), and
+ * that unique violation is a success — the event is already in the feed.
+ */
 export async function insertActivityEvent({
   groupId,
   userId,
@@ -43,7 +49,7 @@ export async function insertActivityEvent({
     type: event.type,
     payload: event.payload,
   });
-  if (error) {
+  if (error && error.code !== UNIQUE_VIOLATION) {
     throw error;
   }
 }

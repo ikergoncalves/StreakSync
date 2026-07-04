@@ -77,12 +77,23 @@ export type ActivityEventData =
   | {
       /** A completion increased the habit's current streak. */
       type: 'streak_continued';
-      payload: StreakEventHabit & { current_streak: number };
+      payload: StreakEventHabit & {
+        current_streak: number;
+        /** Local calendar date (YYYY-MM-DD) whose check-in caused the
+         * increase — part of the dedup key (one event per habit per date,
+         * enforced by migration 0005's partial unique index). */
+        event_date: string;
+      };
     }
   | {
       /** A streak that was >= 3 reset to 0 because a day/week was missed. */
       type: 'streak_broken';
-      payload: StreakEventHabit & { previous_streak: number };
+      payload: StreakEventHabit & {
+        previous_streak: number;
+        /** Local calendar date (YYYY-MM-DD) the gap was observed; dedup key
+         * like streak_continued's. */
+        event_date: string;
+      };
     }
   | {
       type: 'habit_created';
