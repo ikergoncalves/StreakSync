@@ -57,6 +57,16 @@ npm start
 
 Scan the QR code with Expo Go (Android) or the Camera app (iOS). You can now sign up, create daily or weekly habits, check them off from the Today tab, and watch your streaks grow; the session persists across app restarts.
 
+## Offline-first architecture
+
+Personal data (habits and completions) works fully offline; groups, the activity feed, and the leaderboard require a connection by design.
+
+- **Local SQLite mirror** (`expo-sqlite`): the UI reads and writes a local copy of `habits`/`habit_completions` — no network wait, ever. The schema is versioned via `PRAGMA user_version` so future releases migrate in place.
+- **Sync queue**: every local write also enqueues a mutation row in the same SQLite transaction. The queue drains in order whenever connectivity returns, the app foregrounds, or a mutation happens online. Repeated offline toggles of the same habit/day collapse into one queued mutation. Rows that keep failing with a permanent error stop retrying after 5 attempts and surface a "sync issue" banner; network errors retry forever.
+- **Conflict resolution — last-write-wins by `updated_at`**: when a queued edit reaches the server, the newer side (comparing the server row's `updated_at` against the local write time) wins, and the loser is overwritten. **Known limitation:** genuinely concurrent edits of the same habit from two devices can silently lose one side's change, and un-completing a day leaves no tombstone to compare against. This is a deliberate, industry-standard trade-off for a personal tracker where multi-device concurrent editing is rare.
+
+On launch the app hydrates instantly from SQLite, then reconciles with the server in the background (server wins, except for entities with queued local changes).
+
 > **Tip:** by default Supabase requires email confirmation on signup. For a faster dev loop you can disable it under _Authentication → Providers → Email → Confirm email_.
 
 ## Scripts
@@ -74,7 +84,7 @@ Scan the QR code with Expo Go (Android) or the Camera app (iOS). You can now sig
 - [x] **Phase 1 — Foundation:** Expo + Supabase setup, full database schema with RLS, email/password authentication with persisted sessions
 - [x] **Phase 2 — Habits:** habit CRUD, daily completion with optimistic UI, timezone-safe streak calculation, tab navigation
 - [x] **Phase 3 — Social:** groups, invite codes + `streaksync://join/<CODE>` deep links, realtime activity feed, leaderboard
-- [ ] **Phase 4 — Offline-first:** local SQLite, sync queue, conflict resolution
+- [x] **Phase 4 — Offline-first:** local SQLite mirror, sync queue with automatic drain on reconnect, last-write-wins conflict resolution
 - [ ] **Phase 5 — Notifications:** push notifications via Expo Push
 - [ ] **Phase 6 — Polish:** animations, dark mode, onboarding
 - [ ] **Phase 7 — Ship:** EAS Build, landing page, demo GIF
