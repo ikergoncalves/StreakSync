@@ -233,7 +233,9 @@ export const useHabitsStore = create<HabitsState>((set, get) => {
       }
       try {
         await reconcile(user.id);
-        set({ error: null });
+        if (get().error !== null) {
+          set({ error: null });
+        }
       } catch (error) {
         set({ error: getHabitsErrorMessage(error) });
       }
