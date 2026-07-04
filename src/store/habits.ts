@@ -4,16 +4,18 @@ import { useAuthStore } from './auth';
 import { useGroupsStore } from './groups';
 import { insertActivityEvent } from '../lib/activity';
 import { detectStreakActivity, habitCreatedEvent } from '../lib/activityEvents';
+import { HabitInput } from '../lib/habits';
 import {
-  createHabit,
-  HabitInput,
-  listCompletions,
-  listHabits,
-  softDeleteHabit,
-  toggleCompletion,
-  updateHabit,
-} from '../lib/habits';
+  getSyncQueueSummary,
+  hydrateHabitsData,
+  localCreateHabit,
+  localSoftDeleteHabit,
+  localToggleCompletion,
+  localUpdateHabit,
+} from '../lib/localHabits';
+import { getIsOnline } from '../lib/network';
 import { computeHabitStreak, Streak, todayLocalISO } from '../lib/streaks';
+import { drainSyncQueue, reconcile } from '../lib/syncEngine';
 import { ActivityEventData, Habit } from '../types';
 
 const SIGNED_OUT_MESSAGE = 'You need to be signed in to do that.';
@@ -51,7 +53,9 @@ export interface CompletionChange {
  * least one other member. Solo users cost nothing here: the group list is an
  * in-memory read (loaded once at app start by AppNavigator), so no query
  * runs and no rows are written. Best-effort by design — the feed must never
- * block or fail the habit mutation that triggered it.
+ * block or fail the habit mutation that triggered it, and (per the Phase 4
+ * scope decision) activity events are NOT queued for offline retry: social
+ * features stay online-only, so an offline publish just fails silently.
  */
 function publishActivity(events: ActivityEventData[]): void {
   if (events.length === 0) {
@@ -85,8 +89,10 @@ export function resetPublishedActivityEvents(): void {
   publishedStreakEvents.clear();
 }
 
-// Phase 3 hook: every completion mutation ends here after it succeeds, so no
-// refactoring of the toggle flow was needed to add activity events.
+// Phase 3 hook: every completion mutation ends here after the local write
+// succeeds (SQLite is the source of truth, so the local write IS the
+// mutation), keeping event detection at the same point in the flow as when
+// it ran after the direct API call.
 function notifyCompletionChanged(change: CompletionChange): void {
   const events = detectStreakActivity(change).filter((event) => {
     if (event.type !== 'streak_continued' && event.type !== 'streak_broken') {
@@ -106,129 +112,236 @@ interface HabitsState {
   habits: Habit[];
   /** Ascending YYYY-MM-DD completion dates per habit id. */
   completions: Record<string, string[]>;
-  /** True while the initial load (or a refresh) is in flight. */
+  /** Kept for API compatibility; hydration is synchronous SQLite reads, so
+   * it only flags the signed-out early return now. */
   isLoading: boolean;
-  /** Message from the most recent failed load; mutations report errors via their result. */
+  /** True while an explicit pull-to-refresh reconciliation runs. */
+  isSyncing: boolean;
+  /** Message from the most recent failed server sync; local reads/writes
+   * cannot fail this way. */
   error: string | null;
+  /** Habits with queued offline mutations (their own or a completion's). */
+  pendingSyncHabitIds: string[];
+  /** True when a queued mutation gave up after repeated permanent errors. */
+  hasSyncFailures: boolean;
+  /** Hydrates from SQLite instantly, then reconciles in the background. */
   load: () => Promise<void>;
+  /** Pull-to-refresh: like load, but drives the isSyncing spinner. */
+  refresh: () => Promise<void>;
+  /** Reconciles with the server and drains the sync queue (no-op offline). */
+  syncNow: () => Promise<void>;
   create: (input: HabitInput) => Promise<HabitsResult>;
   update: (habitId: string, input: Partial<HabitInput>) => Promise<HabitsResult>;
   remove: (habitId: string) => Promise<HabitsResult>;
-  /** Optimistically toggles the completion for `date` (defaults to today). */
+  /** Toggles the completion for `date` (defaults to today) — local-first. */
   toggle: (habitId: string, date?: string) => Promise<HabitsResult>;
 }
 
-export const useHabitsStore = create<HabitsState>((set, get) => ({
-  habits: [],
-  completions: {},
-  isLoading: false,
-  error: null,
+export const useHabitsStore = create<HabitsState>((set, get) => {
+  /**
+   * Re-reads SQLite and updates the store ONLY when something actually
+   * changed — reconciliation after which nothing differs must not produce
+   * new references (and hence no re-render/reflow of the habit list).
+   */
+  const rehydrateIfChanged = (userId: string): void => {
+    const { habits, completions } = hydrateHabitsData(userId);
+    const summary = getSyncQueueSummary(userId);
+    const state = get();
+    const updates: Partial<HabitsState> = {};
+    if (
+      JSON.stringify([habits, completions]) !== JSON.stringify([state.habits, state.completions])
+    ) {
+      updates.habits = habits;
+      updates.completions = completions;
+    }
+    if (summary.pendingHabitIds.join('\n') !== state.pendingSyncHabitIds.join('\n')) {
+      updates.pendingSyncHabitIds = summary.pendingHabitIds;
+    }
+    if (summary.hasFailures !== state.hasSyncFailures) {
+      updates.hasSyncFailures = summary.hasFailures;
+    }
+    if (Object.keys(updates).length > 0) {
+      set(updates);
+    }
+  };
 
-  load: async () => {
-    const user = useAuthStore.getState().user;
-    if (!user) {
-      set({ isLoading: false, error: SIGNED_OUT_MESSAGE });
+  /** Fire-and-forget push of queued mutations after a local write. */
+  const drainInBackground = async (userId: string): Promise<void> => {
+    if (!getIsOnline()) {
       return;
     }
-    set({ isLoading: true, error: null });
     try {
-      const [habits, completionRows] = await Promise.all([
-        listHabits(user.id),
-        listCompletions(user.id),
-      ]);
-      // Defense in depth: the queries already filter by user_id server-side,
-      // but habits/habit_completions RLS deliberately also exposes group
-      // peers' rows (for the leaderboard), so the personal list must never
-      // trust result breadth — drop anything that isn't the user's own.
-      const ownHabits = habits.filter((habit) => habit.user_id === user.id);
-      const completions: Record<string, string[]> = {};
-      for (const row of completionRows) {
-        if (row.user_id === user.id) {
-          (completions[row.habit_id] ??= []).push(row.completed_on);
-        }
+      await drainSyncQueue(userId);
+    } catch {
+      // A drain that dies unexpectedly is retried by the next trigger
+      // (reconnect, foreground, next mutation); failures that matter are
+      // recorded on the queue rows themselves and surfaced via the summary.
+    }
+    rehydrateIfChanged(userId);
+  };
+
+  return {
+    habits: [],
+    completions: {},
+    isLoading: false,
+    isSyncing: false,
+    error: null,
+    pendingSyncHabitIds: [],
+    hasSyncFailures: false,
+
+    load: async () => {
+      const user = useAuthStore.getState().user;
+      if (!user) {
+        set({ isLoading: false, error: SIGNED_OUT_MESSAGE });
+        return;
       }
-      set({ habits: ownHabits, completions, isLoading: false });
-    } catch (error) {
-      set({ isLoading: false, error: getHabitsErrorMessage(error) });
-    }
-  },
-
-  create: async (input) => {
-    const user = useAuthStore.getState().user;
-    if (!user) {
-      return { error: SIGNED_OUT_MESSAGE };
-    }
-    try {
-      const habit = await createHabit(user.id, input);
-      // Habits are listed oldest-first, so the new one belongs at the end.
-      set((state) => ({ habits: [...state.habits, habit] }));
-      publishActivity([habitCreatedEvent(habit)]);
-      return { error: null };
-    } catch (error) {
-      return { error: getHabitsErrorMessage(error) };
-    }
-  },
-
-  update: async (habitId, input) => {
-    try {
-      const habit = await updateHabit(habitId, input);
-      set((state) => ({
-        habits: state.habits.map((existing) => (existing.id === habitId ? habit : existing)),
-      }));
-      return { error: null };
-    } catch (error) {
-      return { error: getHabitsErrorMessage(error) };
-    }
-  },
-
-  remove: async (habitId) => {
-    try {
-      await softDeleteHabit(habitId);
-      set((state) => {
-        const completions = { ...state.completions };
-        delete completions[habitId];
-        return {
-          habits: state.habits.filter((habit) => habit.id !== habitId),
-          completions,
-        };
+      // Local data first: synchronous SQLite reads, no network wait, no
+      // spinner. The server reconciliation below happens in the background
+      // relative to the UI (state is already set when it starts).
+      const { habits, completions } = hydrateHabitsData(user.id);
+      const summary = getSyncQueueSummary(user.id);
+      set({
+        habits,
+        completions,
+        isLoading: false,
+        error: null,
+        pendingSyncHabitIds: summary.pendingHabitIds,
+        hasSyncFailures: summary.hasFailures,
       });
-      return { error: null };
-    } catch (error) {
-      return { error: getHabitsErrorMessage(error) };
-    }
-  },
+      await get().syncNow();
+    },
 
-  toggle: async (habitId, date = todayLocalISO()) => {
-    const { habits, completions } = get();
-    const habit = habits.find((candidate) => candidate.id === habitId);
-    if (!habit) {
-      return { error: FALLBACK_MESSAGE };
-    }
-    const user = useAuthStore.getState().user;
-    if (!user) {
-      return { error: SIGNED_OUT_MESSAGE };
-    }
+    refresh: async () => {
+      set({ isSyncing: true });
+      try {
+        await get().syncNow();
+      } finally {
+        set({ isSyncing: false });
+      }
+    },
 
-    const before = completions[habitId] ?? [];
-    const completed = !before.includes(date);
-    const after = completed ? [...before, date].sort() : before.filter((d) => d !== date);
+    syncNow: async () => {
+      const user = useAuthStore.getState().user;
+      if (!user) {
+        return;
+      }
+      if (!getIsOnline()) {
+        // Nothing to reconcile against; just refresh the queue-derived
+        // indicators so the UI reflects the latest local mutations.
+        rehydrateIfChanged(user.id);
+        return;
+      }
+      try {
+        await reconcile(user.id);
+        set({ error: null });
+      } catch (error) {
+        set({ error: getHabitsErrorMessage(error) });
+      }
+      rehydrateIfChanged(user.id);
+    },
 
-    // Optimistic: apply the change immediately, roll back if the API fails.
-    set((state) => ({ completions: { ...state.completions, [habitId]: after } }));
-    try {
-      await toggleCompletion({ habitId, userId: user.id, date, completed });
-    } catch (error) {
-      set((state) => ({ completions: { ...state.completions, [habitId]: before } }));
-      return { error: getHabitsErrorMessage(error) };
-    }
+    create: async (input) => {
+      const user = useAuthStore.getState().user;
+      if (!user) {
+        return { error: SIGNED_OUT_MESSAGE };
+      }
+      try {
+        const habit = localCreateHabit(user.id, input);
+        // Habits are listed oldest-first, so the new one belongs at the end.
+        set((state) => ({
+          habits: [...state.habits, habit],
+          pendingSyncHabitIds: [...new Set([...state.pendingSyncHabitIds, habit.id])].sort(),
+        }));
+        publishActivity([habitCreatedEvent(habit)]);
+        void drainInBackground(user.id);
+        return { error: null };
+      } catch (error) {
+        return { error: getHabitsErrorMessage(error) };
+      }
+    },
 
-    // Reflect the new streak in any already-loaded group leaderboard right
-    // away — the activity-event/Realtime round-trip only covers peers.
-    useGroupsStore.getState().patchOwnCompletionData(user.id, habit, after);
-    notifyCompletionChanged({ habit, date, completed, before, after });
-    return { error: null };
-  },
-}));
+    update: async (habitId, input) => {
+      const user = useAuthStore.getState().user;
+      if (!user) {
+        return { error: SIGNED_OUT_MESSAGE };
+      }
+      try {
+        const habit = localUpdateHabit(user.id, habitId, input);
+        if (!habit) {
+          return { error: FALLBACK_MESSAGE };
+        }
+        set((state) => ({
+          habits: state.habits.map((existing) => (existing.id === habitId ? habit : existing)),
+          pendingSyncHabitIds: [...new Set([...state.pendingSyncHabitIds, habitId])].sort(),
+        }));
+        void drainInBackground(user.id);
+        return { error: null };
+      } catch (error) {
+        return { error: getHabitsErrorMessage(error) };
+      }
+    },
+
+    remove: async (habitId) => {
+      const user = useAuthStore.getState().user;
+      if (!user) {
+        return { error: SIGNED_OUT_MESSAGE };
+      }
+      try {
+        if (!localSoftDeleteHabit(user.id, habitId)) {
+          return { error: FALLBACK_MESSAGE };
+        }
+        set((state) => {
+          const completions = { ...state.completions };
+          delete completions[habitId];
+          return {
+            habits: state.habits.filter((habit) => habit.id !== habitId),
+            completions,
+          };
+        });
+        void drainInBackground(user.id);
+        return { error: null };
+      } catch (error) {
+        return { error: getHabitsErrorMessage(error) };
+      }
+    },
+
+    toggle: async (habitId, date = todayLocalISO()) => {
+      const { habits, completions } = get();
+      const habit = habits.find((candidate) => candidate.id === habitId);
+      if (!habit) {
+        return { error: FALLBACK_MESSAGE };
+      }
+      const user = useAuthStore.getState().user;
+      if (!user) {
+        return { error: SIGNED_OUT_MESSAGE };
+      }
+
+      try {
+        // SQLite is the optimistic state: the local write is the mutation,
+        // and the queued row reconciles with the server asynchronously. No
+        // in-memory rollback is needed anymore — a failed server sync can
+        // no longer "un-toggle" the UI.
+        const { completed } = localToggleCompletion({ habitId, userId: user.id, date });
+        const before = completions[habitId] ?? [];
+        const after = completed ? [...before, date].sort() : before.filter((d) => d !== date);
+        set((state) => ({
+          completions: { ...state.completions, [habitId]: after },
+          pendingSyncHabitIds: [...new Set([...state.pendingSyncHabitIds, habitId])].sort(),
+        }));
+
+        // Same point in the flow as before the local-first rework: streak
+        // math, leaderboard patching, and activity events all fire
+        // immediately on the (now local) write.
+        useGroupsStore.getState().patchOwnCompletionData(user.id, habit, after);
+        notifyCompletionChanged({ habit, date, completed, before, after });
+        void drainInBackground(user.id);
+        return { error: null };
+      } catch (error) {
+        return { error: getHabitsErrorMessage(error) };
+      }
+    },
+  };
+});
 
 /** Pure selector: streak for one habit, derived from store state. */
 export function selectHabitStreak(
@@ -250,4 +363,12 @@ export function selectIsCompleted(
   date: string,
 ): boolean {
   return (state.completions[habitId] ?? []).includes(date);
+}
+
+/** Pure selector: whether a habit has mutations still waiting to sync. */
+export function selectHasPendingSync(
+  state: Pick<HabitsState, 'pendingSyncHabitIds'>,
+  habitId: string,
+): boolean {
+  return state.pendingSyncHabitIds.includes(habitId);
 }
