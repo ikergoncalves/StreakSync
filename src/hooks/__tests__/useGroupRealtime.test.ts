@@ -48,6 +48,10 @@ interface FakeChannel {
 // asynchronously, and .on() after .subscribe() throws. Any test that drives
 // the hook into the old double-subscribe bug fails loudly here.
 let trackedChannels: FakeChannel[] = [];
+// Every .on() call that landed on an already-subscribed channel. The throw
+// alone can vanish into an unhandled rejection, so violations are also
+// recorded for deterministic assertions.
+let onAfterSubscribeViolations: string[] = [];
 
 function makeChannel(topic: string): FakeChannel {
   const channel: FakeChannel = {
@@ -58,6 +62,7 @@ function makeChannel(topic: string): FakeChannel {
   };
   channel.on.mockImplementation(() => {
     if (channel.subscribed) {
+      onAfterSubscribeViolations.push(channel.topic);
       throw new Error(
         `cannot add 'postgres_changes' callbacks for ${channel.topic} after 'subscribe()'`,
       );
@@ -96,6 +101,7 @@ function channelsFor(groupId: string): FakeChannel[] {
 beforeEach(() => {
   jest.clearAllMocks();
   trackedChannels = [];
+  onAfterSubscribeViolations = [];
   mockedChannel.mockImplementation((topic: string) => {
     const existing = trackedChannels.find((channel) => channel.topic === `realtime:${topic}`);
     if (existing) {
@@ -215,5 +221,47 @@ describe('useGroupRealtime', () => {
     expect(mockedRemoveChannel).toHaveBeenCalledWith(first);
     // The stale channel never had callbacks added after it subscribed.
     expect(first.on).toHaveBeenCalledTimes(1);
+  });
+
+  it('serializes two overlapping subscriptions for the same topic in one commit', async () => {
+    // Two hooks in ONE component: both effects fire back-to-back in the same
+    // commit, so without per-topic serialization both stale scans run before
+    // either invocation has created its channel, and the second one then
+    // gets the first's already-subscribed instance back from
+    // supabase.channel(). No flush between the two invocations — that is
+    // the point.
+    await renderHook(() => {
+      useGroupRealtime('group-1');
+      useGroupRealtime('group-1');
+    });
+    await flush();
+
+    // .on() never landed on an already-subscribed channel (no crash, no
+    // unhandled rejection), and exactly one live, subscribed channel remains
+    // for the topic.
+    expect(onAfterSubscribeViolations).toEqual([]);
+    const remaining = channelsFor('group-1');
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0].subscribed).toBe(true);
+    expect(remaining[0].on).toHaveBeenCalledTimes(1);
+  });
+
+  it('logs instead of throwing when the subscribe flow fails', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    mockedChannel.mockImplementationOnce(() => {
+      throw new Error('realtime unavailable');
+    });
+
+    // Must resolve without throwing: the failure is caught inside the hook
+    // instead of escaping as an unhandled rejection.
+    await renderHook(() => useGroupRealtime('group-1'));
+    await flush();
+
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('group-activity-group-1'),
+      expect.any(Error),
+    );
+    expect(channelsFor('group-1')).toHaveLength(0);
+    warn.mockRestore();
   });
 });
