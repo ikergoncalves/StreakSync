@@ -100,14 +100,29 @@ export const useHabitsStore = create<HabitsState>((set, get) => ({
   error: null,
 
   load: async () => {
+    const user = useAuthStore.getState().user;
+    if (!user) {
+      set({ isLoading: false, error: SIGNED_OUT_MESSAGE });
+      return;
+    }
     set({ isLoading: true, error: null });
     try {
-      const [habits, completionRows] = await Promise.all([listHabits(), listCompletions()]);
+      const [habits, completionRows] = await Promise.all([
+        listHabits(user.id),
+        listCompletions(user.id),
+      ]);
+      // Defense in depth: the queries already filter by user_id server-side,
+      // but habits/habit_completions RLS deliberately also exposes group
+      // peers' rows (for the leaderboard), so the personal list must never
+      // trust result breadth — drop anything that isn't the user's own.
+      const ownHabits = habits.filter((habit) => habit.user_id === user.id);
       const completions: Record<string, string[]> = {};
       for (const row of completionRows) {
-        (completions[row.habit_id] ??= []).push(row.completed_on);
+        if (row.user_id === user.id) {
+          (completions[row.habit_id] ??= []).push(row.completed_on);
+        }
       }
-      set({ habits, completions, isLoading: false });
+      set({ habits: ownHabits, completions, isLoading: false });
     } catch (error) {
       set({ isLoading: false, error: getHabitsErrorMessage(error) });
     }

@@ -15,11 +15,19 @@ export interface HabitInput {
   target_days_per_week: number | null;
 }
 
-/** Active habits for the signed-in user (RLS scopes the query), oldest first. */
-export async function listHabits(): Promise<Habit[]> {
+/**
+ * The user's own active habits, oldest first. The explicit user_id filter is
+ * load-bearing, not redundant with RLS: the habits policies deliberately
+ * also grant read access to group peers' rows (habits_select_group_peers,
+ * for the Groups leaderboard), so a bare select here would silently include
+ * peers' habits whenever the user shares a group. RLS is the backstop, never
+ * the only scoping mechanism for personal queries.
+ */
+export async function listHabits(userId: string): Promise<Habit[]> {
   const { data, error } = await supabase
     .from('habits')
     .select('*')
+    .eq('user_id', userId)
     .is('deleted_at', null)
     .order('created_at', { ascending: true });
   if (error) {
@@ -73,9 +81,17 @@ export interface CompletionRange {
   to?: string;
 }
 
-/** Completions for the signed-in user, oldest first, optionally date-bounded. */
-export async function listCompletions(range: CompletionRange = {}): Promise<HabitCompletion[]> {
-  let query = supabase.from('habit_completions').select('*');
+/**
+ * The user's own completions, oldest first, optionally date-bounded. Like
+ * listHabits, the explicit user_id filter matters: RLS also exposes group
+ * peers' completions (habit_completions_select_group_peers) for the
+ * leaderboard, so this must not rely on RLS breadth.
+ */
+export async function listCompletions(
+  userId: string,
+  range: CompletionRange = {},
+): Promise<HabitCompletion[]> {
+  let query = supabase.from('habit_completions').select('*').eq('user_id', userId);
   if (range.from) {
     query = query.gte('completed_on', range.from);
   }

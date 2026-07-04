@@ -91,6 +91,11 @@ describe('load', () => {
 
     await useHabitsStore.getState().load();
 
+    // Personal queries are scoped to the signed-in user explicitly — RLS is
+    // deliberately broader (it exposes group peers' rows for the
+    // leaderboard), so passing the id is part of the contract.
+    expect(mockedApi.listHabits).toHaveBeenCalledWith('user-1');
+    expect(mockedApi.listCompletions).toHaveBeenCalledWith('user-1');
     const state = useHabitsStore.getState();
     expect(state.habits).toEqual(habits);
     expect(state.completions).toEqual({
@@ -99,6 +104,31 @@ describe('load', () => {
     });
     expect(state.isLoading).toBe(false);
     expect(state.error).toBeNull();
+  });
+
+  it('never keeps habits or completions belonging to another user', async () => {
+    // Defense in depth for the Today-screen leak: even if the data layer
+    // returned a group peer's rows (as the unfiltered query once did), the
+    // store must drop them rather than mix them into the personal list.
+    mockedApi.listHabits.mockResolvedValue([
+      makeHabit(),
+      makeHabit({ id: 'habit-peer', user_id: 'user-2', name: 'Peer habit' }),
+    ]);
+    mockedApi.listCompletions.mockResolvedValue([
+      makeCompletion({ completed_on: '2026-07-02' }),
+      makeCompletion({
+        id: 'completion-peer',
+        habit_id: 'habit-peer',
+        user_id: 'user-2',
+        completed_on: '2026-07-02',
+      }),
+    ]);
+
+    await useHabitsStore.getState().load();
+
+    const state = useHabitsStore.getState();
+    expect(state.habits.map((habit) => habit.id)).toEqual(['habit-1']);
+    expect(state.completions).toEqual({ 'habit-1': ['2026-07-02'] });
   });
 
   it('records an error message when loading fails', async () => {
