@@ -34,18 +34,47 @@ export async function listHabits(userId: string): Promise<Habit[]> {
   return (data ?? []) as Habit[];
 }
 
-export async function createHabit(userId: string, input: HabitInput): Promise<Habit> {
+export interface CreateHabitOptions {
+  /** Reuse a client-generated id (offline sync replays the local row's id). */
+  id?: string;
+  /** Preserve the local creation time instead of the server's default now(). */
+  createdAt?: string;
+}
+
+export async function createHabit(
+  userId: string,
+  input: HabitInput,
+  options: CreateHabitOptions = {},
+): Promise<Habit> {
   // The id is generated client-side (not by the DB default) so that Phase 4
   // offline sync can create rows locally before the server ever sees them.
   const { data, error } = await supabase
     .from('habits')
-    .insert({ id: randomUUID(), user_id: userId, ...input })
+    .insert({
+      id: options.id ?? randomUUID(),
+      user_id: userId,
+      ...input,
+      ...(options.createdAt ? { created_at: options.createdAt } : {}),
+    })
     .select()
     .single();
   if (error) {
     throw error;
   }
   return data as Habit;
+}
+
+/**
+ * One habit by id, INCLUDING soft-deleted rows (deleted_at set) — the sync
+ * engine needs to see a remote deletion to resolve conflicts against queued
+ * offline edits. Returns null when the row does not exist at all.
+ */
+export async function getHabit(habitId: string): Promise<Habit | null> {
+  const { data, error } = await supabase.from('habits').select('*').eq('id', habitId).maybeSingle();
+  if (error) {
+    throw error;
+  }
+  return (data as Habit | null) ?? null;
 }
 
 export async function updateHabit(habitId: string, input: Partial<HabitInput>): Promise<Habit> {
@@ -103,6 +132,27 @@ export async function listCompletions(
   return (data ?? []) as HabitCompletion[];
 }
 
+/**
+ * One completion by its logical key (habit + date). Returns null when the
+ * habit is not completed on that date — used by the sync engine to compare
+ * a queued offline toggle against the server's current state.
+ */
+export async function getCompletion(
+  habitId: string,
+  date: string,
+): Promise<HabitCompletion | null> {
+  const { data, error } = await supabase
+    .from('habit_completions')
+    .select('*')
+    .eq('habit_id', habitId)
+    .eq('completed_on', date)
+    .maybeSingle();
+  if (error) {
+    throw error;
+  }
+  return (data as HabitCompletion | null) ?? null;
+}
+
 export interface ToggleCompletionInput {
   habitId: string;
   userId: string;
@@ -110,6 +160,8 @@ export interface ToggleCompletionInput {
   date: string;
   /** Desired state: true inserts the completion row, false deletes it. */
   completed: boolean;
+  /** Reuse a client-generated id (offline sync replays the local row's id). */
+  id?: string;
 }
 
 /**
@@ -123,10 +175,11 @@ export async function toggleCompletion({
   userId,
   date,
   completed,
+  id,
 }: ToggleCompletionInput): Promise<void> {
   if (completed) {
     const { error } = await supabase.from('habit_completions').insert({
-      id: randomUUID(),
+      id: id ?? randomUUID(),
       habit_id: habitId,
       user_id: userId,
       completed_on: date,
