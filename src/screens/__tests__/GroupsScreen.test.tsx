@@ -19,6 +19,15 @@ jest.mock('../../hooks/useGroupRealtime', () => ({
   useGroupRealtime: jest.fn(),
 }));
 
+// Connectivity is faked per test: the groups screen is online-only by the
+// Phase 4 scope decision, so offline it must show a dedicated state instead
+// of stale social data.
+let mockIsOnline = true;
+jest.mock('../../hooks/useIsOnline', () => ({
+  useIsOnline: () => mockIsOnline,
+  useNetworkStatusMonitor: jest.fn(),
+}));
+
 // The screen only reads the signed-in user's id (for the sole-owner check);
 // the real auth store would drag in the supabase client.
 jest.mock('../../store/auth', () => ({
@@ -118,6 +127,7 @@ function renderScreen() {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockIsOnline = true;
   mockSelectLeaderboard.mockReturnValue([]);
   mockState = {
     myGroups: [],
@@ -146,6 +156,34 @@ describe('GroupsScreen', () => {
     await renderScreen();
 
     expect(mockState.loadGroups).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the offline state and attempts no network calls while offline', async () => {
+    mockIsOnline = false;
+    mockState.myGroups = [makeGroup()];
+    mockState.activeGroupId = 'group-1';
+
+    await renderScreen();
+
+    expect(screen.getByTestId('groups-offline')).toBeTruthy();
+    expect(mockState.loadGroups).not.toHaveBeenCalled();
+    expect(mockState.loadMembers).not.toHaveBeenCalled();
+    expect(mockState.loadActivity).not.toHaveBeenCalled();
+    // Cached social data is hidden rather than presented as if it were live.
+    expect(screen.queryByText('A7K2M9XZ')).toBeNull();
+  });
+
+  it('tears down the realtime subscription while offline', async () => {
+    const { useGroupRealtime } = jest.requireMock<{
+      useGroupRealtime: jest.Mock;
+    }>('../../hooks/useGroupRealtime');
+    mockIsOnline = false;
+    mockState.myGroups = [makeGroup()];
+    mockState.activeGroupId = 'group-1';
+
+    await renderScreen();
+
+    expect(useGroupRealtime).toHaveBeenCalledWith(null);
   });
 
   it('shows the empty state with create and join CTAs when the user has no groups', async () => {

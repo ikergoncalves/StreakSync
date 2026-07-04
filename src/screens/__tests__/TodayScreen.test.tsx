@@ -8,12 +8,23 @@ jest.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }),
 }));
 
+// Connectivity is faked per test (the OfflineBanner reads this hook).
+let mockIsOnline = true;
+jest.mock('../../hooks/useIsOnline', () => ({
+  useIsOnline: () => mockIsOnline,
+  useNetworkStatusMonitor: jest.fn(),
+}));
+
 interface MockState {
   habits: Habit[];
   completions: Record<string, string[]>;
   isLoading: boolean;
+  isSyncing: boolean;
   error: string | null;
+  pendingSyncHabitIds: string[];
+  hasSyncFailures: boolean;
   load: jest.Mock;
+  refresh: jest.Mock;
   toggle: jest.Mock;
 }
 
@@ -60,12 +71,17 @@ function renderScreen() {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockIsOnline = true;
   mockState = {
     habits: [],
     completions: {},
     isLoading: false,
+    isSyncing: false,
     error: null,
+    pendingSyncHabitIds: [],
+    hasSyncFailures: false,
     load: jest.fn().mockResolvedValue(undefined),
+    refresh: jest.fn().mockResolvedValue(undefined),
     toggle: jest.fn().mockResolvedValue({ error: null }),
   };
 });
@@ -144,5 +160,40 @@ describe('TodayScreen', () => {
     await fireEvent.press(screen.getByTestId('habit-row-habit-1'));
 
     expect(navigation.navigate).toHaveBeenCalledWith('HabitDetail', { habitId: 'habit-1' });
+  });
+
+  it('shows the offline banner only while offline', async () => {
+    mockIsOnline = false;
+    mockState.habits = [makeHabit()];
+
+    await renderScreen();
+
+    expect(screen.getByTestId('offline-banner')).toBeTruthy();
+    // The list itself keeps working — offline never blocks local habits.
+    expect(screen.getByText('Read')).toBeTruthy();
+  });
+
+  it('hides the offline banner while online', async () => {
+    await renderScreen();
+
+    expect(screen.queryByTestId('offline-banner')).toBeNull();
+  });
+
+  it('marks habits with queued mutations with a pending-sync indicator', async () => {
+    mockState.habits = [makeHabit(), makeHabit({ id: 'habit-2', name: 'Run' })];
+    mockState.pendingSyncHabitIds = ['habit-1'];
+
+    await renderScreen();
+
+    expect(screen.getByTestId('pending-sync-habit-1')).toBeTruthy();
+    expect(screen.queryByTestId('pending-sync-habit-2')).toBeNull();
+  });
+
+  it('surfaces queued mutations that permanently failed to sync', async () => {
+    mockState.hasSyncFailures = true;
+
+    await renderScreen();
+
+    expect(screen.getByTestId('sync-issue-banner')).toBeTruthy();
   });
 });
