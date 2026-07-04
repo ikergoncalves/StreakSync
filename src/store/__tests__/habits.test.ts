@@ -1,9 +1,10 @@
 import * as activityApi from '../../lib/activity';
+import * as groupsApi from '../../lib/groups';
 import { GroupWithMemberCount } from '../../lib/groups';
 import * as habitsApi from '../../lib/habits';
 import { addDays, todayLocalISO } from '../../lib/streaks';
-import { Habit, HabitCompletion } from '../../types';
-import { useGroupsStore } from '../groups';
+import { GroupMember, Habit, HabitCompletion } from '../../types';
+import { selectLeaderboard, useGroupsStore } from '../groups';
 import {
   resetPublishedActivityEvents,
   selectHabitStreak,
@@ -46,6 +47,7 @@ jest.mock('../auth', () => ({
 
 const mockedApi = habitsApi as jest.Mocked<typeof habitsApi>;
 const mockedActivityApi = activityApi as jest.Mocked<typeof activityApi>;
+const mockedGroupsApi = groupsApi as jest.Mocked<typeof groupsApi>;
 
 function makeHabit(overrides: Partial<Habit> = {}): Habit {
   return {
@@ -80,7 +82,12 @@ beforeEach(() => {
   jest.clearAllMocks();
   useHabitsStore.setState({ habits: [], completions: {}, isLoading: false, error: null });
   // No groups by default: the pre-Phase-3 tests run with emission disabled.
-  useGroupsStore.setState({ myGroups: [] });
+  useGroupsStore.setState({
+    myGroups: [],
+    membersByGroup: {},
+    memberHabitsByGroup: {},
+    memberCompletionsByGroup: {},
+  });
   mockedActivityApi.insertActivityEvent.mockResolvedValue(undefined);
   // The session dedup registry outlives store resets; clear it per test.
   resetPublishedActivityEvents();
@@ -455,6 +462,66 @@ describe('activity events', () => {
     await useHabitsStore.getState().toggle('habit-1');
 
     expect(mockedActivityApi.insertActivityEvent).not.toHaveBeenCalled();
+  });
+
+  it('patches cached group leaderboard data immediately when the own toggle succeeds', async () => {
+    const makeMember = (userId: string, username: string): GroupMember => ({
+      group_id: 'group-1',
+      user_id: userId,
+      role: 'member',
+      joined_at: '2026-07-01T00:00:00Z',
+      profile: {
+        id: userId,
+        username,
+        display_name: username,
+        avatar_url: null,
+        created_at: '2026-06-01T00:00:00Z',
+        updated_at: '2026-06-01T00:00:00Z',
+      },
+    });
+    const peerHabit = makeHabit({ id: 'habit-2', user_id: 'user-2', name: 'Run' });
+    const peerCompletion = makeCompletion({
+      id: 'completion-peer',
+      habit_id: 'habit-2',
+      user_id: 'user-2',
+      completed_on: today,
+    });
+    useGroupsStore.setState({
+      myGroups: [makeGroup('group-1', 2)],
+      membersByGroup: { 'group-1': [makeMember('user-1', 'alice'), makeMember('user-2', 'bob')] },
+      memberHabitsByGroup: { 'group-1': [makeHabit(), peerHabit] },
+      memberCompletionsByGroup: { 'group-1': [peerCompletion] },
+    });
+    useHabitsStore.setState({
+      habits: [makeHabit()],
+      completions: { 'habit-1': [daysAgo(1)] },
+    });
+    mockedApi.toggleCompletion.mockResolvedValue(undefined);
+
+    await useHabitsStore.getState().toggle('habit-1');
+
+    // The user's own cached rows now match the habits store, synchronously
+    // and without any refetch; the peer's row is untouched.
+    const groupsState = useGroupsStore.getState();
+    expect(
+      groupsState.memberCompletionsByGroup['group-1']
+        .filter((completion) => completion.habit_id === 'habit-1')
+        .map((completion) => completion.completed_on),
+    ).toEqual([daysAgo(1), today]);
+    expect(groupsState.memberCompletionsByGroup['group-1']).toContainEqual(peerCompletion);
+    expect(mockedGroupsApi.listGroupMembers).not.toHaveBeenCalled();
+    expect(mockedGroupsApi.listMemberHabitData).not.toHaveBeenCalled();
+    // The leaderboard reflects the new 2-day streak with no Realtime
+    // round-trip: alice 2, bob 1.
+    expect(
+      selectLeaderboard(groupsState, 'group-1', today).map((entry) => [
+        entry.username,
+        entry.totalStreak,
+      ]),
+    ).toEqual([
+      ['alice', 2],
+      ['bob', 1],
+    ]);
   });
 
   it('emits habit_created to shared groups when a habit is created', async () => {

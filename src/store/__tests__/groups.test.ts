@@ -371,6 +371,53 @@ describe('ingestRealtimeEvent', () => {
   });
 });
 
+describe('patchOwnCompletionData', () => {
+  it("replaces only the user's own rows in every cached group, without refetching", () => {
+    const ownHabit = makeHabit('habit-1', 'user-1');
+    const peerHabit = makeHabit('habit-2', 'user-2');
+    const ownOldCompletion = makeCompletion('habit-1', 'user-1', yesterday);
+    const peerCompletion = makeCompletion('habit-2', 'user-2', today);
+    useGroupsStore.setState({
+      memberHabitsByGroup: { 'group-1': [ownHabit, peerHabit], 'group-2': [peerHabit] },
+      memberCompletionsByGroup: {
+        'group-1': [ownOldCompletion, peerCompletion],
+        'group-2': [peerCompletion],
+      },
+    });
+
+    useGroupsStore.getState().patchOwnCompletionData('user-1', ownHabit, [yesterday, today]);
+
+    const state = useGroupsStore.getState();
+    expect(
+      state.memberCompletionsByGroup['group-1']
+        .filter((completion) => completion.habit_id === 'habit-1')
+        .map((completion) => completion.completed_on),
+    ).toEqual([yesterday, today]);
+    // The peer's rows are untouched in both groups.
+    expect(state.memberCompletionsByGroup['group-1']).toContainEqual(peerCompletion);
+    expect(state.memberHabitsByGroup['group-1']).toContainEqual(peerHabit);
+    // group-2 had no cached copy of this habit yet: it gains one.
+    expect(state.memberHabitsByGroup['group-2']).toContainEqual(ownHabit);
+    expect(
+      state.memberCompletionsByGroup['group-2'].filter(
+        (completion) => completion.habit_id === 'habit-1',
+      ),
+    ).toHaveLength(2);
+    // Local patch only — the Realtime/pull-to-refresh paths own refetching.
+    expect(mockedGroupsApi.listGroupMembers).not.toHaveBeenCalled();
+    expect(mockedGroupsApi.listMemberHabitData).not.toHaveBeenCalled();
+  });
+
+  it('is a no-op when no group data is cached', () => {
+    useGroupsStore
+      .getState()
+      .patchOwnCompletionData('user-1', makeHabit('habit-1', 'user-1'), [today]);
+
+    expect(useGroupsStore.getState().memberHabitsByGroup).toEqual({});
+    expect(useGroupsStore.getState().memberCompletionsByGroup).toEqual({});
+  });
+});
+
 describe('selectLeaderboard', () => {
   it('ranks by summed current streaks, breaking ties alphabetically', () => {
     const state = {

@@ -75,6 +75,9 @@ interface GroupsState {
   loadActivity: (groupId: string) => Promise<void>;
   /** Prepends a realtime INSERT to the feed (deduped by id). */
   ingestRealtimeEvent: (event: ActivityEvent) => void;
+  /** Locally patches the signed-in user's own rows in every group's cached
+   * leaderboard data after a completion toggle — no refetch. */
+  patchOwnCompletionData: (userId: string, habit: Habit, completedDates: string[]) => void;
 }
 
 /**
@@ -223,6 +226,49 @@ export const useGroupsStore = create<GroupsState>((set, get) => ({
     } catch (error) {
       set({ error: getGroupsErrorMessage(error) });
     }
+  },
+
+  // Called by the habits store when the user's own toggle succeeds: patch
+  // this user's habit/completion rows inside every group whose leaderboard
+  // data is already cached, so selectLeaderboard reflects the new streak
+  // immediately instead of waiting for the activity event to round-trip
+  // through the database and Realtime. Peers' rows are never touched here —
+  // their changes keep arriving via the Realtime-driven loadMembers refetch.
+  patchOwnCompletionData: (userId, habit, completedDates) => {
+    set((state) => {
+      const groupIds = Object.keys(state.memberHabitsByGroup);
+      if (groupIds.length === 0) {
+        return state;
+      }
+      const memberHabitsByGroup = { ...state.memberHabitsByGroup };
+      const memberCompletionsByGroup = { ...state.memberCompletionsByGroup };
+      const now = new Date().toISOString();
+      for (const groupId of groupIds) {
+        const habits = memberHabitsByGroup[groupId];
+        memberHabitsByGroup[groupId] = habits.some((cached) => cached.id === habit.id)
+          ? habits.map((cached) => (cached.id === habit.id ? habit : cached))
+          : [...habits, habit];
+        memberCompletionsByGroup[groupId] = [
+          // Habit ids are unique to their owner, so filtering by habit_id
+          // can only ever drop this user's own rows.
+          ...(memberCompletionsByGroup[groupId] ?? []).filter(
+            (completion) => completion.habit_id !== habit.id,
+          ),
+          ...completedDates.map((date) => ({
+            // Cache-only placeholder rows, replaced wholesale by the next
+            // loadMembers refetch; the leaderboard math reads only
+            // habit_id/user_id/completed_on.
+            id: `local-${habit.id}-${date}`,
+            habit_id: habit.id,
+            user_id: userId,
+            completed_on: date,
+            created_at: now,
+            updated_at: now,
+          })),
+        ];
+      }
+      return { memberHabitsByGroup, memberCompletionsByGroup };
+    });
   },
 
   ingestRealtimeEvent: (event) => {

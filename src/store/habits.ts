@@ -222,6 +222,9 @@ export const useHabitsStore = create<HabitsState>((set, get) => ({
       return { error: getHabitsErrorMessage(error) };
     }
 
+    // Reflect the new streak in any already-loaded group leaderboard right
+    // away — the activity-event/Realtime round-trip only covers peers.
+    useGroupsStore.getState().patchOwnCompletionData(user.id, habit, after);
     notifyCompletionChanged({ habit, date, completed, before, after });
     return { error: null };
   },
