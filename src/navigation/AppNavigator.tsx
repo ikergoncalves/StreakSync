@@ -4,6 +4,8 @@ import { useEffect } from 'react';
 import { Text } from 'react-native';
 
 import { AppStackParamList, AppTabParamList } from './types';
+import { useNetworkStatusMonitor } from '../hooks/useIsOnline';
+import { useSyncOnReconnect } from '../hooks/useSyncOnReconnect';
 import { CreateGroupScreen } from '../screens/CreateGroupScreen';
 import { GroupsScreen } from '../screens/GroupsScreen';
 import { HabitDetailScreen } from '../screens/HabitDetailScreen';
@@ -52,6 +54,12 @@ function AppTabs() {
 
 export function AppNavigator() {
   const loadGroups = useGroupsStore((state) => state.loadGroups);
+
+  // Connectivity plumbing for the signed-in tree: pipe NetInfo into the
+  // shared online flag, and run a sync (reconcile + queue drain) whenever
+  // connectivity returns or the app comes back to the foreground.
+  useNetworkStatusMonitor();
+  useSyncOnReconnect();
 
   // Load the group list once at sign-in, not just when the Groups tab is
   // opened: the activity emitter in the habits store reads it from memory to

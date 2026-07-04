@@ -18,6 +18,7 @@ import {
 import { Button } from '../components/Button';
 import { Screen } from '../components/Screen';
 import { useGroupRealtime } from '../hooks/useGroupRealtime';
+import { useIsOnline } from '../hooks/useIsOnline';
 import { GroupWithMemberCount } from '../lib/groups';
 import { isSoleOwner } from '../lib/membership';
 import { formatRelativeTime } from '../lib/relativeTime';
@@ -219,6 +220,25 @@ function FeedRow({ event }: { event: ActivityEventWithProfile }) {
   );
 }
 
+/**
+ * Phase 4 scope decision: offline support covers personal data only. Groups,
+ * the feed, and the leaderboard require connectivity, so going offline shows
+ * this state instead of firing doomed network calls or presenting stale
+ * social data as if it were live.
+ */
+function OfflineState() {
+  return (
+    <View testID="groups-offline" className="flex-1 items-center justify-center py-16">
+      <Text className="text-5xl">📡</Text>
+      <Text className="mt-4 text-xl font-semibold text-slate-900">You&apos;re offline</Text>
+      <Text className="mt-1 px-8 text-center text-base text-slate-500">
+        Groups need a connection. Your habits still work from the Today tab, and everything syncs
+        when you&apos;re back online.
+      </Text>
+    </View>
+  );
+}
+
 function NoGroups({ onCreate, onJoin }: { onCreate: () => void; onJoin: () => void }) {
   return (
     <View testID="groups-empty-state" className="flex-1 items-center justify-center py-16">
@@ -260,20 +280,27 @@ export function GroupsScreen({ navigation }: Props) {
     activeGroupId ? state.eventsByGroup[activeGroupId] : undefined,
   );
   const userId = useAuthStore((state) => state.user?.id);
+  const isOnline = useIsOnline();
   const [actionError, setActionError] = useState<string | null>(null);
 
+  // Everything on this screen is network-backed, so fetches are gated on
+  // connectivity; having isOnline in the deps re-runs them on reconnect.
   useEffect(() => {
-    void loadGroups();
-  }, [loadGroups]);
+    if (isOnline) {
+      void loadGroups();
+    }
+  }, [isOnline, loadGroups]);
 
   useEffect(() => {
-    if (activeGroupId) {
+    if (isOnline && activeGroupId) {
       void loadMembers(activeGroupId);
       void loadActivity(activeGroupId);
     }
-  }, [activeGroupId, loadMembers, loadActivity]);
+  }, [isOnline, activeGroupId, loadMembers, loadActivity]);
 
-  useGroupRealtime(activeGroupId);
+  // Passing null offline tears the realtime channel down; it resubscribes on
+  // reconnect through the same serialized flow as any group switch.
+  useGroupRealtime(isOnline ? activeGroupId : null);
 
   // The selector allocates a fresh array, so it must not run inside the
   // zustand subscription (useSyncExternalStore requires stable snapshots);
@@ -412,7 +439,9 @@ export function GroupsScreen({ navigation }: Props) {
         </View>
       ) : null}
 
-      {!isLoading && myGroups.length === 0 ? (
+      {!isOnline ? (
+        <OfflineState />
+      ) : !isLoading && myGroups.length === 0 ? (
         <NoGroups
           onCreate={() => navigation.navigate('CreateGroup')}
           onJoin={() => navigation.navigate('JoinGroup')}

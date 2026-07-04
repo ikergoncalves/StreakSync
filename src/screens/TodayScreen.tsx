@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { FlatList, Pressable, RefreshControl, Text, View } from 'react-native';
 
 import { Button } from '../components/Button';
+import { OfflineBanner } from '../components/OfflineBanner';
 import { Screen } from '../components/Screen';
 import { useHabitStreak } from '../hooks/useHabitStreak';
 import { todayLocalISO } from '../lib/streaks';
@@ -22,11 +23,13 @@ const DEFAULT_COLOR = '#10b981';
 interface HabitRowProps {
   habit: Habit;
   completed: boolean;
+  /** True while the habit has mutations queued for sync. */
+  pendingSync: boolean;
   onToggle: (habitId: string) => void;
   onPress: (habitId: string) => void;
 }
 
-function HabitRow({ habit, completed, onToggle, onPress }: HabitRowProps) {
+function HabitRow({ habit, completed, pendingSync, onToggle, onPress }: HabitRowProps) {
   const streak = useHabitStreak(habit.id);
   const color = habit.color ?? DEFAULT_COLOR;
   const streakLabel =
@@ -50,7 +53,14 @@ function HabitRow({ habit, completed, onToggle, onPress }: HabitRowProps) {
         <Text className="text-base font-semibold text-slate-900" numberOfLines={1}>
           {habit.name}
         </Text>
-        <Text className="mt-0.5 text-sm text-slate-500">🔥 {streakLabel}</Text>
+        <Text className="mt-0.5 text-sm text-slate-500">
+          🔥 {streakLabel}
+          {pendingSync ? (
+            <Text testID={`pending-sync-${habit.id}`} className="text-xs text-slate-400">
+              {'  '}⏳
+            </Text>
+          ) : null}
+        </Text>
       </View>
       <Pressable
         testID={`toggle-${habit.id}`}
@@ -94,8 +104,12 @@ export function TodayScreen({ navigation }: Props) {
   const habits = useHabitsStore((state) => state.habits);
   const completions = useHabitsStore((state) => state.completions);
   const isLoading = useHabitsStore((state) => state.isLoading);
+  const isSyncing = useHabitsStore((state) => state.isSyncing);
   const loadError = useHabitsStore((state) => state.error);
+  const pendingSyncHabitIds = useHabitsStore((state) => state.pendingSyncHabitIds);
+  const hasSyncFailures = useHabitsStore((state) => state.hasSyncFailures);
   const load = useHabitsStore((state) => state.load);
+  const refresh = useHabitsStore((state) => state.refresh);
   const toggle = useHabitsStore((state) => state.toggle);
   const [toggleError, setToggleError] = useState<string | null>(null);
 
@@ -140,6 +154,16 @@ export function TodayScreen({ navigation }: Props) {
         </Pressable>
       </View>
 
+      <OfflineBanner />
+
+      {hasSyncFailures ? (
+        <View testID="sync-issue-banner" className="mx-6 mb-3 rounded-xl bg-amber-50 px-4 py-2">
+          <Text className="text-xs font-medium text-amber-800">
+            Some changes couldn&apos;t sync. They&apos;re saved on this device.
+          </Text>
+        </View>
+      ) : null}
+
       {error ? (
         <View testID="today-error" className="mx-6 mb-3 rounded-xl bg-red-50 px-4 py-3">
           <Text className="text-sm text-red-700">{error}</Text>
@@ -153,6 +177,7 @@ export function TodayScreen({ navigation }: Props) {
           <HabitRow
             habit={item}
             completed={(completions[item.id] ?? []).includes(today)}
+            pendingSync={pendingSyncHabitIds.includes(item.id)}
             onToggle={(habitId) => void handleToggle(habitId)}
             onPress={(habitId) => navigation.navigate('HabitDetail', { habitId })}
           />
@@ -160,8 +185,8 @@ export function TodayScreen({ navigation }: Props) {
         contentContainerClassName="flex-grow px-6 pb-6"
         refreshControl={
           <RefreshControl
-            refreshing={isLoading}
-            onRefresh={() => void load()}
+            refreshing={isSyncing}
+            onRefresh={() => void refresh()}
             tintColor="#059669"
           />
         }
