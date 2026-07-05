@@ -100,6 +100,22 @@ describe('computeStreak (daily)', () => {
     expect(computeStreak(dates, FRIDAY)).toEqual({ current: 1, longest: 2 });
   });
 
+  // The exact real-device scenario reported: day-before-yesterday completed,
+  // yesterday MISSED, today completed. The single day-before-yesterday sits on
+  // the far side of the one-day gap, so it drops out of the CURRENT streak
+  // (today alone counts) while still contributing its run of 1 to longest.
+  it('restarts at 1 when a one-day gap precedes today (completed, missed, completed)', () => {
+    // FRIDAY = today, 2026-07-01 = today-2, 2026-07-02 (today-1) deliberately absent.
+    expect(computeStreak(['2026-07-01', FRIDAY], FRIDAY)).toEqual({ current: 1, longest: 1 });
+  });
+
+  // Same gap, but today is NOT completed: neither the day-before-yesterday nor
+  // the (missing) yesterday reaches the "today or yesterday" window, so the
+  // current streak is 0.
+  it('is 0 when a one-day gap precedes an uncompleted today (completed, missed, missed)', () => {
+    expect(computeStreak(['2026-07-01'], FRIDAY)).toEqual({ current: 0, longest: 1 });
+  });
+
   it('keeps the longest streak from an older, longer run', () => {
     const dates = [
       '2026-06-01',

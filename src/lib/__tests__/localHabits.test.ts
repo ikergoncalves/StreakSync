@@ -18,6 +18,7 @@ import {
   localUpdateHabit,
   mergeServerData,
 } from '../localHabits';
+import { computeHabitStreak, addDays, todayLocalISO } from '../streaks';
 import { Habit, HabitCompletion } from '../../types';
 
 // Real, distinct UUIDs matter here (queue row ids, habit ids, completion
@@ -318,6 +319,84 @@ describe('mergeServerData', () => {
     );
 
     expect(hydrateHabitsData('user-1').habits[0].created_at).toBe('2026-07-01T00:00:00.000Z');
+  });
+});
+
+// Reported real-device scenario, exercised through the REAL SQLite write path
+// (not just the pure math): a daily habit completed the day before yesterday,
+// deliberately left unmarked yesterday, then marked today. The concern was a
+// phantom "yesterday" completion sneaking into the local mirror and inflating
+// the streak. Dates are relative to the real clock so the "today/yesterday"
+// current-streak window applies exactly as it does on device.
+describe('one-day-gap scenario through the local mirror', () => {
+  const today = todayLocalISO();
+  const twoDaysAgo = addDays(today, -2);
+  const dailyHabit: Pick<Habit, 'frequency' | 'target_days_per_week'> = {
+    frequency: 'daily',
+    target_days_per_week: null,
+  };
+
+  it('never materializes a yesterday row when only day-before-yesterday and today are toggled', () => {
+    const habit = localCreateHabit('user-1', INPUT);
+
+    // a. complete today-2, b. skip today-1 entirely, c. complete today.
+    localToggleCompletion({ habitId: habit.id, userId: 'user-1', date: twoDaysAgo });
+    localToggleCompletion({ habitId: habit.id, userId: 'user-1', date: today });
+
+    // d. exactly [today-2, today] in SQLite — no phantom yesterday row.
+    const rows = getLocalDb().getAllSync<{ completed_on: string }>(
+      'SELECT completed_on FROM habit_completions WHERE habit_id = ? ORDER BY completed_on',
+      [habit.id],
+    );
+    expect(rows.map((row) => row.completed_on)).toEqual([twoDaysAgo, today]);
+    const dates = hydrateHabitsData('user-1').completions[habit.id];
+    expect(dates).toEqual([twoDaysAgo, today]);
+
+    // e. the derived current streak is 1 (today only; the gap dropped the
+    // older single day out of the current run).
+    expect(computeHabitStreak(dailyHabit, dates, today)).toEqual({ current: 1, longest: 1 });
+
+    // f. unchecking today drops back to exactly [today-2] and current 0.
+    localToggleCompletion({ habitId: habit.id, userId: 'user-1', date: today });
+    const afterUncheck = hydrateHabitsData('user-1').completions[habit.id];
+    expect(afterUncheck).toEqual([twoDaysAgo]);
+    expect(computeHabitStreak(dailyHabit, afterUncheck, today)).toEqual({ current: 0, longest: 1 });
+  });
+
+  it('survives an app restart mid-sequence without inventing a yesterday row', () => {
+    const habit = localCreateHabit('user-1', INPUT);
+    localToggleCompletion({ habitId: habit.id, userId: 'user-1', date: twoDaysAgo });
+
+    // Simulate the process dying and relaunching: drop the handle, reopen.
+    closeLocalDb();
+
+    localToggleCompletion({ habitId: habit.id, userId: 'user-1', date: today });
+    const dates = hydrateHabitsData('user-1').completions[habit.id];
+    expect(dates).toEqual([twoDaysAgo, today]);
+    expect(computeHabitStreak(dailyHabit, dates, today)).toEqual({ current: 1, longest: 1 });
+  });
+
+  it('a server reconciliation cannot resurrect the unmarked yesterday', () => {
+    const habit = localCreateHabit('user-1', INPUT);
+    localToggleCompletion({ habitId: habit.id, userId: 'user-1', date: twoDaysAgo });
+    localToggleCompletion({ habitId: habit.id, userId: 'user-1', date: today });
+    // Drain the queue rows so these completions are treated as already synced
+    // (no pending mutation shields them from the merge).
+    getLocalDb().runSync('DELETE FROM sync_queue WHERE user_id = ?', ['user-1']);
+
+    // The server snapshot agrees exactly: today-2 and today, no yesterday.
+    mergeServerData(
+      'user-1',
+      [makeServerHabit({ id: habit.id, user_id: 'user-1' })],
+      [
+        makeServerCompletion({ id: 'srv-1', habit_id: habit.id, completed_on: twoDaysAgo }),
+        makeServerCompletion({ id: 'srv-2', habit_id: habit.id, completed_on: today }),
+      ],
+    );
+
+    const dates = hydrateHabitsData('user-1').completions[habit.id];
+    expect(dates).toEqual([twoDaysAgo, today]);
+    expect(computeHabitStreak(dailyHabit, dates, today)).toEqual({ current: 1, longest: 1 });
   });
 });
 

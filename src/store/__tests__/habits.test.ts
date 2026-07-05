@@ -979,3 +979,114 @@ describe('leaderboard cache integrity across own completion toggles', () => {
     );
   });
 });
+
+// End-to-end через o store real + SQLite + sync engine: the reported one-day-gap
+// scenario (completed today-2, missed today-1, marked today) must yield current
+// streak 1, and 0 once today is unmarked, with no phantom yesterday row — even
+// when a background reconcile/drain runs partway through the sequence.
+describe('one-day-gap scenario end to end', () => {
+  const today = todayLocalISO();
+  const twoDaysAgo = addDays(today, -2);
+  const yesterday = addDays(today, -1);
+
+  const currentStreak = () => selectHabitStreak(useHabitsStore.getState(), 'habit-1', today).current;
+  const cachedDates = () => useHabitsStore.getState().completions['habit-1'];
+
+  it('computes current 1 (then 0 on uncheck) with a reconcile mid-sequence', async () => {
+    seedSyncedHabit(makeHabit());
+
+    // a. complete today-2. Interleave a reconcile whose server snapshot agrees
+    // with local truth so far (only today-2), proving a sync pass here is inert.
+    await useHabitsStore.getState().toggle('habit-1', twoDaysAgo);
+    await flush();
+    mockedApi.listHabits.mockResolvedValue([makeHabit()]);
+    mockedApi.listCompletions.mockResolvedValue([
+      makeCompletion({ id: 'srv-a', completed_on: twoDaysAgo }),
+    ]);
+    await useHabitsStore.getState().syncNow();
+    expect(cachedDates()).toEqual([twoDaysAgo]);
+    // Only today-2 completed: two days back is already outside the
+    // today/yesterday window, so the current streak has lapsed to 0.
+    expect(currentStreak()).toBe(0);
+
+    // b. skip today-1 entirely. c. complete today.
+    await useHabitsStore.getState().toggle('habit-1', today);
+    await flush();
+
+    // No phantom yesterday appeared in the store slice or in SQLite.
+    expect(cachedDates()).toEqual([twoDaysAgo, today]);
+    expect(currentStreak()).toBe(1);
+
+    // Reconcile again with a consistent server snapshot (today-2 + today, no
+    // yesterday): the number must not drift.
+    mockedApi.listCompletions.mockResolvedValue([
+      makeCompletion({ id: 'srv-a', completed_on: twoDaysAgo }),
+      makeCompletion({ id: 'srv-c', completed_on: today }),
+    ]);
+    await useHabitsStore.getState().syncNow();
+    expect(cachedDates()).toEqual([twoDaysAgo, today]);
+    expect(currentStreak()).toBe(1);
+
+    // f. uncheck today -> exactly [today-2] and current 0.
+    await useHabitsStore.getState().toggle('habit-1', today);
+    await flush();
+    expect(cachedDates()).toEqual([twoDaysAgo]);
+    expect(currentStreak()).toBe(0);
+  });
+
+  it("matches this habit's leaderboard contribution to its personal streak", async () => {
+    const makeMember = (userId: string, username: string): GroupMember => ({
+      group_id: 'group-1',
+      user_id: userId,
+      role: 'member',
+      joined_at: '2026-07-01T00:00:00.000Z',
+      profile: {
+        id: userId,
+        username,
+        display_name: username,
+        avatar_url: null,
+        created_at: '2026-06-01T00:00:00.000Z',
+        updated_at: '2026-06-01T00:00:00.000Z',
+      },
+    });
+    useGroupsStore.setState({
+      myGroups: [
+        {
+          id: 'group-1',
+          name: 'Morning crew',
+          invite_code: 'A7K2M9XZ',
+          owner_id: 'user-1',
+          created_at: '2026-07-01T00:00:00Z',
+          updated_at: '2026-07-01T00:00:00Z',
+          member_count: 1,
+        },
+      ],
+      membersByGroup: { 'group-1': [makeMember('user-1', 'alice')] },
+      memberHabitsByGroup: { 'group-1': [makeHabit()] },
+      memberCompletionsByGroup: { 'group-1': [] },
+    });
+    seedSyncedHabit(makeHabit());
+
+    await useHabitsStore.getState().toggle('habit-1', twoDaysAgo);
+    await useHabitsStore.getState().toggle('habit-1', today);
+    await flush();
+
+    // The leaderboard total for this user equals the personal current streak
+    // (1) — no leaderboard-specific drift, and no yesterday leaking in.
+    const [entry] = selectLeaderboard(useGroupsStore.getState(), 'group-1', today);
+    expect(entry.totalStreak).toBe(currentStreak());
+    expect(entry.totalStreak).toBe(1);
+    expect(
+      useGroupsStore
+        .getState()
+        .memberCompletionsByGroup['group-1'].map((completion) => completion.completed_on)
+        .sort(),
+    ).toEqual([twoDaysAgo, today]);
+    // Guard: nothing for the untouched yesterday made it into the cache.
+    expect(
+      useGroupsStore
+        .getState()
+        .memberCompletionsByGroup['group-1'].some((c) => c.completed_on === yesterday),
+    ).toBe(false);
+  });
+});
