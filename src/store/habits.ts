@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 
 import { useAuthStore } from './auth';
-import { useGroupsStore } from './groups';
+import { registerOwnPendingSyncProvider, useGroupsStore } from './groups';
 import { insertActivityEvent } from '../lib/activity';
 import { detectStreakActivity, habitCreatedEvent } from '../lib/activityEvents';
 import { HabitInput } from '../lib/habits';
@@ -331,12 +331,17 @@ export const useHabitsStore = create<HabitsState>((set, get) => {
           pendingSyncHabitIds: [...new Set([...state.pendingSyncHabitIds, habitId])].sort(),
         }));
 
-        // Same point in the flow as before the local-first rework: streak
-        // math, leaderboard patching, and activity events all fire
-        // immediately on the (now local) write.
+        // Streak math and leaderboard patching still fire immediately on the
+        // (now local) write; the activity events wait for the background
+        // drain. Realtime peers refetch the whole leaderboard the moment the
+        // event row lands, so publishing before the completion itself has
+        // synced would hand every member (this device included) a server
+        // snapshot that predates the toggle. Offline or failed drains keep
+        // today's semantics: the publish attempt just fails silently (events
+        // are online-only by the Phase 4 scope decision).
         useGroupsStore.getState().patchOwnCompletionData(user.id, habit, after);
-        notifyCompletionChanged({ habit, date, completed, before, after });
-        void drainInBackground(user.id);
+        const change: CompletionChange = { habit, date, completed, before, after };
+        void drainInBackground(user.id).then(() => notifyCompletionChanged(change));
         return { error: null };
       } catch (error) {
         return { error: getHabitsErrorMessage(error) };
@@ -344,6 +349,11 @@ export const useHabitsStore = create<HabitsState>((set, get) => {
     },
   };
 });
+
+// loadMembers merges rather than replaces the signed-in user's own cached
+// leaderboard rows while their mutations are still queued; it learns which
+// habits those are through this provider (see groups.ts).
+registerOwnPendingSyncProvider(() => useHabitsStore.getState().pendingSyncHabitIds);
 
 /** Pure selector: streak for one habit, derived from store state. */
 export function selectHabitStreak(

@@ -80,6 +80,19 @@ interface GroupsState {
   patchOwnCompletionData: (userId: string, habit: Habit, completedDates: string[]) => void;
 }
 
+// The signed-in user's own rows in the cached leaderboard data are patched
+// locally on every toggle (patchOwnCompletionData) while the server sync runs
+// in a background drain. A loadMembers snapshot fetched mid-drain predates
+// those rows, so the merge below needs to know which own habits still have
+// queued mutations. The habits store owns that knowledge and registers this
+// provider at module load, keeping the store dependency one-directional
+// (habits -> groups).
+let getOwnPendingSyncHabitIds: () => string[] = () => [];
+
+export function registerOwnPendingSyncProvider(provider: () => string[]): void {
+  getOwnPendingSyncHabitIds = provider;
+}
+
 /**
  * State updates shared by leave and deleteGroup: drop the group and every
  * per-group cache, moving the selection when it pointed at the removed
@@ -208,12 +221,47 @@ export const useGroupsStore = create<GroupsState>((set, get) => ({
       const { habits, completions } = await listMemberHabitData(
         members.map((member) => member.user_id),
       );
-      set((state) => ({
-        isRefreshing: false,
-        membersByGroup: { ...state.membersByGroup, [groupId]: members },
-        memberHabitsByGroup: { ...state.memberHabitsByGroup, [groupId]: habits },
-        memberCompletionsByGroup: { ...state.memberCompletionsByGroup, [groupId]: completions },
-      }));
+      set((state) => {
+        // Merge, don't replace, the signed-in user's own rows: the snapshot
+        // may predate a completion whose server sync is still draining. For
+        // own habits with queued mutations the cached rows (kept current by
+        // patchOwnCompletionData) embody newer local truth than anything the
+        // server can return, so they win; the guard on cachedHabits falls
+        // back to the snapshot for habits this cache has never seen. Peers'
+        // rows always come from the snapshot, and once the queue drains the
+        // next refetch converges on pure server data.
+        const cachedHabits = state.memberHabitsByGroup[groupId] ?? [];
+        const pendingIds = new Set(
+          getOwnPendingSyncHabitIds().filter((habitId) =>
+            cachedHabits.some((cached) => cached.id === habitId),
+          ),
+        );
+        const mergedHabits =
+          pendingIds.size === 0
+            ? habits
+            : [
+                ...habits.filter((habit) => !pendingIds.has(habit.id)),
+                ...cachedHabits.filter((habit) => pendingIds.has(habit.id)),
+              ];
+        const mergedCompletions =
+          pendingIds.size === 0
+            ? completions
+            : [
+                ...completions.filter((completion) => !pendingIds.has(completion.habit_id)),
+                ...(state.memberCompletionsByGroup[groupId] ?? []).filter((completion) =>
+                  pendingIds.has(completion.habit_id),
+                ),
+              ];
+        return {
+          isRefreshing: false,
+          membersByGroup: { ...state.membersByGroup, [groupId]: members },
+          memberHabitsByGroup: { ...state.memberHabitsByGroup, [groupId]: mergedHabits },
+          memberCompletionsByGroup: {
+            ...state.memberCompletionsByGroup,
+            [groupId]: mergedCompletions,
+          },
+        };
+      });
     } catch (error) {
       set({ isRefreshing: false, error: getGroupsErrorMessage(error) });
     }
