@@ -798,3 +798,184 @@ describe('activity events', () => {
     });
   });
 });
+
+describe('leaderboard cache integrity across own completion toggles', () => {
+  const today = todayLocalISO();
+  const daysAgo = (days: number) => addDays(today, -days);
+
+  function makeGroup(id: string, memberCount: number): GroupWithMemberCount {
+    return {
+      id,
+      name: 'Morning crew',
+      invite_code: 'A7K2M9XZ',
+      owner_id: 'user-1',
+      created_at: '2026-07-01T00:00:00Z',
+      updated_at: '2026-07-01T00:00:00Z',
+      member_count: memberCount,
+    };
+  }
+
+  function makeMember(userId: string, username: string): GroupMember {
+    return {
+      group_id: 'group-1',
+      user_id: userId,
+      role: 'member',
+      joined_at: '2026-07-01T00:00:00.000Z',
+      profile: {
+        id: userId,
+        username,
+        display_name: username,
+        avatar_url: null,
+        created_at: '2026-06-01T00:00:00.000Z',
+        updated_at: '2026-06-01T00:00:00.000Z',
+      },
+    };
+  }
+
+  // alice (user-1, signed in) has a 3-day streak on habit-1; bob (user-2, a
+  // peer) has a 2-day streak on habit-2. Server-shaped rows, as loadMembers
+  // would have cached them.
+  const aliceHabit = makeHabit();
+  const bobHabit = makeHabit({ id: 'habit-2', user_id: 'user-2', name: 'Run' });
+  const aliceDates = [daysAgo(2), daysAgo(1), today];
+  const aliceServerCompletions = aliceDates.map((date) =>
+    makeCompletion({ id: `alice-${date}`, completed_on: date }),
+  );
+  const bobServerCompletions = [daysAgo(1), today].map((date) =>
+    makeCompletion({ id: `bob-${date}`, habit_id: 'habit-2', user_id: 'user-2', completed_on: date }),
+  );
+
+  const leaderboardNow = () =>
+    selectLeaderboard(useGroupsStore.getState(), 'group-1', today).map((entry) => [
+      entry.username,
+      entry.totalStreak,
+    ]);
+  const cachedBobHabits = () =>
+    useGroupsStore.getState().memberHabitsByGroup['group-1'].filter(
+      (habit) => habit.user_id === 'user-2',
+    );
+  const cachedBobCompletions = () =>
+    useGroupsStore.getState().memberCompletionsByGroup['group-1'].filter(
+      (completion) => completion.user_id === 'user-2',
+    );
+
+  function seedTwoMemberGroup(): void {
+    useGroupsStore.setState({
+      myGroups: [makeGroup('group-1', 2)],
+      membersByGroup: { 'group-1': [makeMember('user-1', 'alice'), makeMember('user-2', 'bob')] },
+      memberHabitsByGroup: { 'group-1': [aliceHabit, bobHabit] },
+      memberCompletionsByGroup: {
+        'group-1': [...aliceServerCompletions, ...bobServerCompletions],
+      },
+    });
+    seedSyncedHabit(makeHabit());
+    seedSyncedCompletions('habit-1', aliceDates);
+  }
+
+  it('toggling own completion off and back on moves only the own entry and never touches the peer rows', async () => {
+    seedTwoMemberGroup();
+    expect(leaderboardNow()).toEqual([
+      ['alice', 3],
+      ['bob', 2],
+    ]);
+
+    // a. alice unchecks today's completion (the one extending her streak).
+    await useHabitsStore.getState().toggle('habit-1');
+    await flush();
+
+    // b. bob's cached rows are byte-for-byte untouched ("zeroes the other
+    // member" regression) ...
+    expect(cachedBobHabits()).toEqual([bobHabit]);
+    expect(cachedBobCompletions()).toEqual(bobServerCompletions);
+    // c. ... and alice's entry decreased by exactly 1.
+    expect(leaderboardNow()).toEqual([
+      ['alice', 2],
+      ['bob', 2],
+    ]);
+
+    // d. alice toggles the same completion back on.
+    await useHabitsStore.getState().toggle('habit-1');
+    await flush();
+
+    // e. her entry is back at the original value; bob is still untouched.
+    expect(leaderboardNow()).toEqual([
+      ['alice', 3],
+      ['bob', 2],
+    ]);
+    expect(cachedBobHabits()).toEqual([bobHabit]);
+    expect(cachedBobCompletions()).toEqual(bobServerCompletions);
+  });
+
+  it('a stale refetch landing before the toggle finished syncing must not clobber the optimistic patch', async () => {
+    seedTwoMemberGroup();
+
+    // Hold the drain's server write open: the completion DELETE for the
+    // toggle below stays in flight for the whole test.
+    mockedApi.getCompletion.mockResolvedValue(
+      makeCompletion({ id: `alice-${today}`, completed_on: today }),
+    );
+    let releaseServerToggle!: () => void;
+    mockedApi.toggleCompletion.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          releaseServerToggle = () => resolve(undefined);
+        }),
+    );
+
+    // alice unchecks today; the local write and the cache patch are instant,
+    // the server sync is a background drain that has NOT completed.
+    await useHabitsStore.getState().toggle('habit-1');
+    expect(leaderboardNow()).toEqual([
+      ['alice', 2],
+      ['bob', 2],
+    ]);
+
+    // An activity event round-trips through Realtime faster than the drain
+    // and triggers loadMembers: the snapshot predates the toggle (alice's
+    // today row still present) but carries a NEWER peer update (bob now has
+    // a 3-day streak).
+    const bobUpdatedCompletions = [
+      ...bobServerCompletions,
+      makeCompletion({
+        id: `bob-${daysAgo(2)}`,
+        habit_id: 'habit-2',
+        user_id: 'user-2',
+        completed_on: daysAgo(2),
+      }),
+    ];
+    mockedGroupsApi.listGroupMembers.mockResolvedValue([
+      makeMember('user-1', 'alice'),
+      makeMember('user-2', 'bob'),
+    ]);
+    mockedGroupsApi.listMemberHabitData.mockResolvedValue({
+      habits: [aliceHabit, bobHabit],
+      completions: [...aliceServerCompletions, ...bobUpdatedCompletions],
+    });
+    await useGroupsStore.getState().loadMembers('group-1');
+
+    // The out-of-date snapshot must not resurrect alice's unchecked
+    // completion, while bob's newer peer data DOES come through.
+    expect(leaderboardNow()).toEqual([
+      ['bob', 3],
+      ['alice', 2],
+    ]);
+
+    // Once the drain completes, a fresh refetch converges on pure server
+    // data (which now reflects the toggle).
+    releaseServerToggle();
+    await flush();
+    expect(useHabitsStore.getState().pendingSyncHabitIds).toEqual([]);
+    const syncedSnapshot = {
+      habits: [aliceHabit, bobHabit],
+      completions: [...aliceServerCompletions.slice(0, 2), ...bobUpdatedCompletions],
+    };
+    mockedGroupsApi.listMemberHabitData.mockResolvedValue(syncedSnapshot);
+    await useGroupsStore.getState().loadMembers('group-1');
+    expect(useGroupsStore.getState().memberHabitsByGroup['group-1']).toEqual(
+      syncedSnapshot.habits,
+    );
+    expect(useGroupsStore.getState().memberCompletionsByGroup['group-1']).toEqual(
+      syncedSnapshot.completions,
+    );
+  });
+});

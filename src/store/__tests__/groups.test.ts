@@ -9,7 +9,7 @@ import {
   HabitCompletion,
   Profile,
 } from '../../types';
-import { selectLeaderboard, useGroupsStore } from '../groups';
+import { registerOwnPendingSyncProvider, selectLeaderboard, useGroupsStore } from '../groups';
 
 jest.mock('../../lib/groups', () => ({
   listMyGroups: jest.fn(),
@@ -122,6 +122,9 @@ function makeEvent(overrides: Partial<ActivityEventWithProfile> = {}): ActivityE
 
 beforeEach(() => {
   jest.clearAllMocks();
+  // Back to the module default ("nothing pending"); tests that exercise the
+  // stale-snapshot guard register their own provider.
+  registerOwnPendingSyncProvider(() => []);
   useGroupsStore.setState({
     myGroups: [],
     activeGroupId: null,
@@ -332,6 +335,68 @@ describe('loadMembers', () => {
     expect(state.memberHabitsByGroup['group-1']).toEqual(habits);
     expect(state.memberCompletionsByGroup['group-1']).toEqual(completions);
     expect(state.isRefreshing).toBe(false);
+  });
+
+  it('keeps cached own rows for habits with pending sync instead of applying a stale snapshot', async () => {
+    // The signed-in user just toggled habit-1; the cache holds the patched
+    // truth (yesterday only) while the mutation is still draining, and the
+    // refetched snapshot predates the toggle (today still present).
+    registerOwnPendingSyncProvider(() => ['habit-1']);
+    const ownHabit = makeHabit('habit-1', 'user-1');
+    const peerHabit = makeHabit('habit-2', 'user-2');
+    const cachedOwnCompletion = makeCompletion('habit-1', 'user-1', yesterday);
+    useGroupsStore.setState({
+      memberHabitsByGroup: { 'group-1': [ownHabit, peerHabit] },
+      memberCompletionsByGroup: {
+        'group-1': [cachedOwnCompletion, makeCompletion('habit-2', 'user-2', yesterday)],
+      },
+    });
+    const stalePeerUpdate = makeCompletion('habit-2', 'user-2', today);
+    mockedGroupsApi.listGroupMembers.mockResolvedValue([
+      makeMember('user-1', 'alice'),
+      makeMember('user-2', 'bob'),
+    ]);
+    mockedGroupsApi.listMemberHabitData.mockResolvedValue({
+      habits: [ownHabit, peerHabit],
+      completions: [
+        makeCompletion('habit-1', 'user-1', yesterday),
+        makeCompletion('habit-1', 'user-1', today),
+        stalePeerUpdate,
+      ],
+    });
+
+    await useGroupsStore.getState().loadMembers('group-1');
+
+    const state = useGroupsStore.getState();
+    // Own rows: the cached (newer) truth survives; the snapshot's resurrected
+    // completion for today is discarded.
+    expect(
+      state.memberCompletionsByGroup['group-1'].filter(
+        (completion) => completion.habit_id === 'habit-1',
+      ),
+    ).toEqual([cachedOwnCompletion]);
+    // Peer rows: always the snapshot's — realtime peer updates still land.
+    expect(
+      state.memberCompletionsByGroup['group-1'].filter(
+        (completion) => completion.habit_id === 'habit-2',
+      ),
+    ).toEqual([stalePeerUpdate]);
+    expect(state.memberHabitsByGroup['group-1']).toEqual([peerHabit, ownHabit]);
+  });
+
+  it('falls back to the snapshot for pending habits the cache has never seen', async () => {
+    // First-ever load for this group while some mutation is queued: there is
+    // no cached row to prefer, so the snapshot must not be dropped.
+    registerOwnPendingSyncProvider(() => ['habit-1']);
+    const habits = [makeHabit('habit-1', 'user-1')];
+    const completions = [makeCompletion('habit-1', 'user-1', today)];
+    mockedGroupsApi.listGroupMembers.mockResolvedValue([makeMember('user-1', 'alice')]);
+    mockedGroupsApi.listMemberHabitData.mockResolvedValue({ habits, completions });
+
+    await useGroupsStore.getState().loadMembers('group-1');
+
+    expect(useGroupsStore.getState().memberHabitsByGroup['group-1']).toEqual(habits);
+    expect(useGroupsStore.getState().memberCompletionsByGroup['group-1']).toEqual(completions);
   });
 });
 
