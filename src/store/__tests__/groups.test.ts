@@ -384,6 +384,133 @@ describe('loadMembers', () => {
     expect(state.memberHabitsByGroup['group-1']).toEqual([peerHabit, ownHabit]);
   });
 
+  it('a reload with a consistent snapshot keeps every total exact (no cross-member inflation)', async () => {
+    // Reported bug: after the merge fix, a plain reload (pull-to-refresh /
+    // reopening the screen) showed the signed-in user's total as the SUM of
+    // their own streak and the peer's (own=2, peer=3 -> displayed own=5).
+    registerOwnPendingSyncProvider(() => ['habit-1']);
+    const twoDaysAgo = addDays(today, -2);
+    const ownHabit = makeHabit('habit-1', 'user-1');
+    const peerHabit = makeHabit('habit-2', 'user-2');
+    // Cache and snapshot agree exactly: alice has a 2-day streak on habit-1,
+    // bob a 3-day streak on habit-2 (no staleness — this is NOT the
+    // mid-drain scenario of the test above).
+    const consistentCompletions = () => [
+      makeCompletion('habit-1', 'user-1', yesterday),
+      makeCompletion('habit-1', 'user-1', today),
+      makeCompletion('habit-2', 'user-2', twoDaysAgo),
+      makeCompletion('habit-2', 'user-2', yesterday),
+      makeCompletion('habit-2', 'user-2', today),
+    ];
+    useGroupsStore.setState({
+      membersByGroup: { 'group-1': [makeMember('user-1', 'alice'), makeMember('user-2', 'bob')] },
+      memberHabitsByGroup: { 'group-1': [ownHabit, peerHabit] },
+      memberCompletionsByGroup: { 'group-1': consistentCompletions() },
+    });
+    mockedGroupsApi.listGroupMembers.mockResolvedValue([
+      makeMember('user-1', 'alice'),
+      makeMember('user-2', 'bob'),
+    ]);
+    mockedGroupsApi.listMemberHabitData.mockResolvedValue({
+      habits: [makeHabit('habit-1', 'user-1'), makeHabit('habit-2', 'user-2')],
+      completions: consistentCompletions(),
+    });
+
+    await useGroupsStore.getState().loadMembers('group-1');
+
+    const state = useGroupsStore.getState();
+    // Invariant: at most one row per habit id in the merged habit cache, and
+    // at most one row per habit/date pair in the merged completion cache.
+    const habitIds = state.memberHabitsByGroup['group-1'].map((habit) => habit.id);
+    expect(habitIds.slice().sort()).toEqual([...new Set(habitIds)].sort());
+    const completionKeys = state.memberCompletionsByGroup['group-1'].map(
+      (completion) => `${completion.habit_id}:${completion.completed_on}`,
+    );
+    expect(completionKeys.slice().sort()).toEqual([...new Set(completionKeys)].sort());
+    // Every habit row still belongs to its real owner.
+    expect(
+      state.memberHabitsByGroup['group-1'].map((habit) => [habit.id, habit.user_id]).sort(),
+    ).toEqual([
+      ['habit-1', 'user-1'],
+      ['habit-2', 'user-2'],
+    ]);
+    // The exact totals: alice must be exactly 2, never 2 + 3.
+    expect(
+      selectLeaderboard(state, 'group-1', today).map((entry) => [
+        entry.username,
+        entry.totalStreak,
+      ]),
+    ).toEqual([
+      ['bob', 3],
+      ['alice', 2],
+    ]);
+  });
+
+  it('never yields more than one row per habit id, no matter how often the merge re-runs', async () => {
+    // Invariant guard, independent of the leaderboard math: reloading with a
+    // pending own habit must be idempotent — each pass picks EITHER the
+    // cached row OR the snapshot row per habit id, never both, and never
+    // accumulates rows across passes.
+    registerOwnPendingSyncProvider(() => ['habit-1']);
+    const ownHabit = makeHabit('habit-1', 'user-1');
+    const peerHabit = makeHabit('habit-2', 'user-2');
+    const snapshot = {
+      habits: [makeHabit('habit-1', 'user-1'), makeHabit('habit-2', 'user-2')],
+      completions: [
+        makeCompletion('habit-1', 'user-1', today),
+        makeCompletion('habit-2', 'user-2', today),
+      ],
+    };
+    useGroupsStore.setState({
+      memberHabitsByGroup: { 'group-1': [ownHabit, peerHabit] },
+      memberCompletionsByGroup: {
+        'group-1': [
+          makeCompletion('habit-1', 'user-1', today),
+          makeCompletion('habit-2', 'user-2', today),
+        ],
+      },
+    });
+    mockedGroupsApi.listGroupMembers.mockResolvedValue([
+      makeMember('user-1', 'alice'),
+      makeMember('user-2', 'bob'),
+    ]);
+    mockedGroupsApi.listMemberHabitData.mockResolvedValue(snapshot);
+
+    const uniqueHabitIds = () => {
+      const ids = useGroupsStore
+        .getState()
+        .memberHabitsByGroup['group-1'].map((habit) => habit.id);
+      return ids.length === new Set(ids).size;
+    };
+    const uniqueCompletionKeys = () => {
+      const keys = useGroupsStore
+        .getState()
+        .memberCompletionsByGroup['group-1'].map(
+          (completion) => `${completion.habit_id}:${completion.completed_on}`,
+        );
+      return keys.length === new Set(keys).size;
+    };
+
+    // Two reloads while the mutation is still pending: the cached own row
+    // wins each time, once.
+    await useGroupsStore.getState().loadMembers('group-1');
+    expect(uniqueHabitIds()).toBe(true);
+    expect(uniqueCompletionKeys()).toBe(true);
+    expect(useGroupsStore.getState().memberHabitsByGroup['group-1']).toHaveLength(2);
+    await useGroupsStore.getState().loadMembers('group-1');
+    expect(uniqueHabitIds()).toBe(true);
+    expect(uniqueCompletionKeys()).toBe(true);
+    expect(useGroupsStore.getState().memberHabitsByGroup['group-1']).toHaveLength(2);
+
+    // Queue drained: the next reload converges on the pure snapshot.
+    registerOwnPendingSyncProvider(() => []);
+    await useGroupsStore.getState().loadMembers('group-1');
+    expect(useGroupsStore.getState().memberHabitsByGroup['group-1']).toEqual(snapshot.habits);
+    expect(useGroupsStore.getState().memberCompletionsByGroup['group-1']).toEqual(
+      snapshot.completions,
+    );
+  });
+
   it('falls back to the snapshot for pending habits the cache has never seen', async () => {
     // First-ever load for this group while some mutation is queued: there is
     // no cached row to prefer, so the snapshot must not be dropped.
