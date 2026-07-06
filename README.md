@@ -34,7 +34,7 @@ npm install
 
 1. Create a free project at [supabase.com/dashboard](https://supabase.com/dashboard).
 2. Apply the database migrations, in order, from `supabase/migrations/`:
-   - **SQL editor (simplest):** open _SQL Editor_ in the dashboard and run the contents of each `NNNN_*.sql` file in ascending order (`0001_initial_schema.sql` through `0005_activity_event_dedup.sql`).
+   - **SQL editor (simplest):** open _SQL Editor_ in the dashboard and run the contents of each `NNNN_*.sql` file in ascending order (`0001_initial_schema.sql` through `0006_push_tokens.sql`).
    - **Supabase CLI (alternative):** `supabase link --project-ref <your-ref>` then `supabase db push`.
 3. **Enable Realtime** for the activity feed: in the dashboard go to _Database → Replication_ and toggle on the `activity_events` table (this adds it to the `supabase_realtime` publication; it can't be done from a migration here). Without it the app still works, but group activity only appears after a manual refresh.
 
@@ -69,6 +69,19 @@ On launch the app hydrates instantly from SQLite, then reconciles with the serve
 
 > **Tip:** by default Supabase requires email confirmation on signup. For a faster dev loop you can disable it under _Authentication → Providers → Email → Confirm email_.
 
+## Push notifications setup
+
+Phase 5 adds two kinds of notifications:
+
+- **Social pushes** — when a group member breaks a streak, or continues one onto a milestone (every 5th day/week; ordinary daily check-ins deliberately don't notify), the other members of their groups get a push. Sends are **device-to-device**: the acting user's phone posts directly to [Expo's push API](https://docs.expo.dev/push-notifications/sending-notifications/) for its peers right after its own completion finishes syncing — no server-side function. Like the activity feed, this is best-effort and online-only: if the acting device is offline at sync time, the push simply isn't sent.
+- **Personal daily reminders** — each active **daily** habit that isn't checked off by 8:00 PM local time triggers a local notification (weekly habits are out of reminder scope for now; the reminder time becomes configurable in Phase 6). These are scheduled entirely on-device and work fully offline.
+
+To set it up:
+
+1. Apply migration `0006_push_tokens.sql` (see step 3 above) — it stores each device's Expo push token, readable only by that user's group peers.
+2. **Use a physical device with a development build.** Remote push delivery is not supported in Expo Go on Android (since SDK 53), so real end-to-end push testing needs an EAS dev build: `npx eas build --profile development --platform android` (the project's `eas.json` and `expo-dev-client` are already configured). Local reminder notifications still work in Expo Go for basic testing; simulators get no push token at all (handled gracefully — the app works fully without one).
+3. Notification permission is requested once after sign-in. Denying it is fine: habits, sync, and groups keep working; you just get no pushes or reminders.
+
 ## Scripts
 
 | Command             | What it does              |
@@ -85,7 +98,7 @@ On launch the app hydrates instantly from SQLite, then reconciles with the serve
 - [x] **Phase 2 — Habits:** habit CRUD, daily completion with optimistic UI, timezone-safe streak calculation, tab navigation
 - [x] **Phase 3 — Social:** groups, invite codes + `streaksync://join/<CODE>` deep links, realtime activity feed, leaderboard
 - [x] **Phase 4 — Offline-first:** local SQLite mirror, sync queue with automatic drain on reconnect, last-write-wins conflict resolution
-- [ ] **Phase 5 — Notifications:** push notifications via Expo Push
+- [x] **Phase 5 — Notifications:** social pushes (streak broken / milestone) sent device-to-device via Expo Push, plus offline local daily reminders
 - [ ] **Phase 6 — Polish:** animations, dark mode, onboarding
 - [ ] **Phase 7 — Ship:** EAS Build, landing page, demo GIF
 
