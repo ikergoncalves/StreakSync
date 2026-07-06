@@ -46,6 +46,22 @@ jest.mock('../../lib/activity', () => ({
   insertActivityEvent: jest.fn(),
 }));
 
+// Phase 5 side-channels of the same mutations. Stubbed here because they
+// pull in the supabase client / expo-notifications; their behavior has its
+// own suites (habitsNotifications.test.ts and the lib tests).
+jest.mock('../../lib/pushTokens', () => ({
+  listGroupPeerTokens: jest.fn().mockResolvedValue([]),
+  deleteInvalidTokens: jest.fn().mockResolvedValue(undefined),
+}));
+jest.mock('../../lib/expoPush', () => ({
+  sendExpoPushMessages: jest.fn().mockResolvedValue({ tickets: [], invalidTokens: [] }),
+}));
+jest.mock('../../lib/habitReminders', () => ({
+  scheduleHabitReminder: jest.fn().mockResolvedValue(undefined),
+  cancelHabitReminder: jest.fn().mockResolvedValue(undefined),
+  reconcileHabitReminders: jest.fn().mockResolvedValue(undefined),
+}));
+
 // The groups store (read by the emitter for fan-out) is real, but its data
 // layer touches the supabase client, so stub that out.
 jest.mock('../../lib/groups', () => ({

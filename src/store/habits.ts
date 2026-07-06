@@ -4,6 +4,12 @@ import { useAuthStore } from './auth';
 import { registerOwnPendingSyncProvider, useGroupsStore } from './groups';
 import { insertActivityEvent } from '../lib/activity';
 import { detectStreakActivity, habitCreatedEvent } from '../lib/activityEvents';
+import { ExpoPushMessage, sendExpoPushMessages } from '../lib/expoPush';
+import {
+  cancelHabitReminder,
+  reconcileHabitReminders,
+  scheduleHabitReminder,
+} from '../lib/habitReminders';
 import { HabitInput } from '../lib/habits';
 import {
   getSyncQueueSummary,
@@ -14,6 +20,7 @@ import {
   localUpdateHabit,
 } from '../lib/localHabits';
 import { getIsOnline } from '../lib/network';
+import { deleteInvalidTokens, listGroupPeerTokens } from '../lib/pushTokens';
 import { computeHabitStreak, Streak, todayLocalISO } from '../lib/streaks';
 import { drainSyncQueue, reconcile } from '../lib/syncEngine';
 import { ActivityEventData, Habit } from '../types';
@@ -49,6 +56,87 @@ export interface CompletionChange {
 }
 
 /**
+ * streak_continued only triggers a push when the new streak is a multiple of
+ * this — meaningful milestones only, avoid notifying peers on every single
+ * daily check-in (that trains them to mute the app). streak_broken always
+ * pushes regardless: a broken streak is the accountability moment this app
+ * exists for. habit_created never pushes — too frequent, too low-value (it
+ * still lands in the activity feed).
+ */
+const STREAK_MILESTONE_INTERVAL = 5;
+
+function isPushWorthy(event: ActivityEventData): boolean {
+  if (event.type === 'streak_broken') {
+    return true;
+  }
+  return (
+    event.type === 'streak_continued' &&
+    event.payload.current_streak % STREAK_MILESTONE_INTERVAL === 0
+  );
+}
+
+function buildPushMessages(
+  event: ActivityEventData,
+  actorName: string,
+  tokens: string[],
+): ExpoPushMessage[] {
+  if (event.type !== 'streak_broken' && event.type !== 'streak_continued') {
+    return [];
+  }
+  const unit = event.payload.frequency === 'weekly' ? 'week' : 'day';
+  const { title, body } =
+    event.type === 'streak_broken'
+      ? {
+          title: `${actorName} broke a streak 💔`,
+          body: `Their ${event.payload.previous_streak}-${unit} streak on "${event.payload.habit_name}" just ended. Send some encouragement!`,
+        }
+      : {
+          title: `${actorName} is on fire 🔥`,
+          body: `"${event.payload.habit_name}" just hit a ${event.payload.current_streak}-${unit} streak.`,
+        };
+  return tokens.map((to) => ({
+    to,
+    title,
+    body,
+    data: { type: event.type, habit_id: event.payload.habit_id },
+  }));
+}
+
+/**
+ * Device-to-device social push: the acting user's phone notifies group
+ * peers directly through Expo's push API (no server-side function — see
+ * migration 0006). Recipients are the OTHER members of every shared group,
+ * deduped by token so a peer sharing two groups gets ONE push per event
+ * (unlike activity rows, which are legitimately one per group feed).
+ * DeviceNotRegistered receipts are routine cleanup, not errors: those
+ * tokens belong to uninstalled apps and are deleted so future sends stop
+ * paying for dead addresses.
+ */
+async function sendSocialPushes(userId: string, events: ActivityEventData[]): Promise<void> {
+  const pushable = events.filter(isPushWorthy);
+  if (pushable.length === 0) {
+    return;
+  }
+  const sharedGroups = useGroupsStore.getState().myGroups.filter((group) => group.member_count > 1);
+  if (sharedGroups.length === 0) {
+    return;
+  }
+  const tokenLists = await Promise.all(
+    sharedGroups.map((group) => listGroupPeerTokens(userId, group.id)),
+  );
+  const tokens = [...new Set(tokenLists.flat())];
+  if (tokens.length === 0) {
+    return;
+  }
+  const actorName = useAuthStore.getState().profile?.display_name ?? 'A group member';
+  const messages = pushable.flatMap((event) => buildPushMessages(event, actorName, tokens));
+  const { invalidTokens } = await sendExpoPushMessages(messages);
+  if (invalidTokens.length > 0) {
+    await deleteInvalidTokens(invalidTokens);
+  }
+}
+
+/**
  * Fans activity events out to every group the acting user shares with at
  * least one other member. Solo users cost nothing here: the group list is an
  * in-memory read (loaded once at app start by AppNavigator), so no query
@@ -56,6 +144,10 @@ export interface CompletionChange {
  * block or fail the habit mutation that triggered it, and (per the Phase 4
  * scope decision) activity events are NOT queued for offline retry: social
  * features stay online-only, so an offline publish just fails silently.
+ *
+ * Social pushes ride the exact same call (and hence the same post-sync
+ * timing and session dedup): a device that is offline here simply doesn't
+ * send them — the accepted activity-events limitation, applied unchanged.
  */
 function publishActivity(events: ActivityEventData[]): void {
   if (events.length === 0) {
@@ -73,6 +165,7 @@ function publishActivity(events: ActivityEventData[]): void {
       );
     }
   }
+  void sendSocialPushes(user.id, events).catch(() => undefined);
 }
 
 // Streak events already published this session, keyed by type/habit/date but
@@ -163,6 +256,12 @@ export const useHabitsStore = create<HabitsState>((set, get) => {
     if (Object.keys(updates).length > 0) {
       set(updates);
     }
+    if (updates.habits && updates.completions) {
+      // Background reconciliation changed local truth (e.g. a habit synced
+      // as deleted from another device): stale reminders must not survive.
+      // Local-only scheduling, best-effort, never blocks the sync path.
+      void reconcileHabitReminders(updates.habits, updates.completions).catch(() => undefined);
+    }
   };
 
   /** Fire-and-forget push of queued mutations after a local write. */
@@ -209,6 +308,10 @@ export const useHabitsStore = create<HabitsState>((set, get) => {
         hasSyncFailures: summary.hasFailures,
       });
       await get().syncNow();
+      // App-launch reconciliation of local reminder schedules against the
+      // (possibly server-updated) habit list — deleted or switched-to-weekly
+      // habits lose their reminders, active daily habits get exactly one.
+      void reconcileHabitReminders(get().habits, get().completions).catch(() => undefined);
     },
 
     refresh: async () => {
@@ -255,6 +358,9 @@ export const useHabitsStore = create<HabitsState>((set, get) => {
           pendingSyncHabitIds: [...new Set([...state.pendingSyncHabitIds, habit.id])].sort(),
         }));
         publishActivity([habitCreatedEvent(habit)]);
+        // New daily habits get their reminder immediately (weekly ones are
+        // out of reminder scope — scheduleHabitReminder resolves that).
+        void scheduleHabitReminder(habit, []).catch(() => undefined);
         void drainInBackground(user.id);
         return { error: null };
       } catch (error) {
@@ -276,6 +382,9 @@ export const useHabitsStore = create<HabitsState>((set, get) => {
           habits: state.habits.map((existing) => (existing.id === habitId ? habit : existing)),
           pendingSyncHabitIds: [...new Set([...state.pendingSyncHabitIds, habitId])].sort(),
         }));
+        // Covers renames (reminder text) and daily<->weekly switches (a
+        // now-weekly habit's reminder is canceled).
+        void scheduleHabitReminder(habit, get().completions[habitId] ?? []).catch(() => undefined);
         void drainInBackground(user.id);
         return { error: null };
       } catch (error) {
@@ -300,6 +409,8 @@ export const useHabitsStore = create<HabitsState>((set, get) => {
             completions,
           };
         });
+        // A deleted habit must never remind again.
+        void cancelHabitReminder(habitId).catch(() => undefined);
         void drainInBackground(user.id);
         return { error: null };
       } catch (error) {
@@ -340,6 +451,10 @@ export const useHabitsStore = create<HabitsState>((set, get) => {
         // today's semantics: the publish attempt just fails silently (events
         // are online-only by the Phase 4 scope decision).
         useGroupsStore.getState().patchOwnCompletionData(user.id, habit, after);
+        // Reminder follows the new completion state instantly and offline:
+        // completing today cancels today's pending reminder, unchecking it
+        // brings the reminder back for the next occurrence.
+        void scheduleHabitReminder(habit, after).catch(() => undefined);
         const change: CompletionChange = { habit, date, completed, before, after };
         void drainInBackground(user.id).then(() => notifyCompletionChanged(change));
         return { error: null };
