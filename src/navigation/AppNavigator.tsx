@@ -5,6 +5,7 @@ import { Text } from 'react-native';
 
 import { AppStackParamList, AppTabParamList } from './types';
 import { useNetworkStatusMonitor } from '../hooks/useIsOnline';
+import { useRegisterPushToken } from '../hooks/useRegisterPushToken';
 import { useSyncOnReconnect } from '../hooks/useSyncOnReconnect';
 import { CreateGroupScreen } from '../screens/CreateGroupScreen';
 import { GroupsScreen } from '../screens/GroupsScreen';
@@ -60,6 +61,11 @@ export function AppNavigator() {
   // connectivity returns or the app comes back to the foreground.
   useNetworkStatusMonitor();
   useSyncOnReconnect();
+
+  // Push token registration (and, on first run, the notification permission
+  // prompt) happens here — after sign-in with the Today tab visible, never
+  // on the auth screens. Denial is fine: everything else keeps working.
+  useRegisterPushToken();
 
   // Load the group list once at sign-in, not just when the Groups tab is
   // opened: the activity emitter in the habits store reads it from memory to
