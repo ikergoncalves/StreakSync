@@ -1,13 +1,22 @@
 import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { CompositeScreenProps } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { FlatList, Pressable, RefreshControl, Text, useColorScheme, View } from 'react-native';
+import Animated, {
+  FadeInDown,
+  useAnimatedStyle,
+  useSharedValue,
+  withSequence,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
 
 import { Button } from '../components/Button';
 import { OfflineBanner } from '../components/OfflineBanner';
 import { Screen } from '../components/Screen';
 import { useHabitStreak } from '../hooks/useHabitStreak';
+import { becameCompleted, streakIncreased } from '../lib/animationTriggers';
 import { todayLocalISO } from '../lib/streaks';
 import { ACCENT, getInlineColors } from '../lib/theme';
 import { AppStackParamList, AppTabParamList } from '../navigation/types';
@@ -37,6 +46,42 @@ function HabitRow({ habit, completed, pendingSync, onToggle, onPress }: HabitRow
   const streakLabel =
     habit.frequency === 'weekly' ? `${streak.current} wk streak` : `${streak.current} day streak`;
 
+  // Both animations react to the already-applied optimistic state — the
+  // toggle itself is never gated on them. The previous values live in refs
+  // and the pure predicates in lib/animationTriggers decide whether anything
+  // actually changed, so unrelated re-renders (and first mount) stay still.
+  const checkScale = useSharedValue(1);
+  const flameScale = useSharedValue(1);
+  const prevCompleted = useRef<boolean | undefined>(undefined);
+  const prevStreak = useRef<number | undefined>(undefined);
+
+  useEffect(() => {
+    if (becameCompleted(prevCompleted.current, completed)) {
+      checkScale.value = withSequence(
+        withSpring(1.2, { damping: 14, stiffness: 400 }),
+        withSpring(1, { damping: 16, stiffness: 300 }),
+      );
+    }
+    prevCompleted.current = completed;
+  }, [completed, checkScale]);
+
+  useEffect(() => {
+    if (streakIncreased(prevStreak.current, streak.current)) {
+      flameScale.value = withSequence(
+        withTiming(1.25, { duration: 140 }),
+        withTiming(1, { duration: 180 }),
+      );
+    }
+    prevStreak.current = streak.current;
+  }, [streak, flameScale]);
+
+  const checkAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: checkScale.value }],
+  }));
+  const flameAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: flameScale.value }],
+  }));
+
   return (
     <Pressable
       testID={`habit-row-${habit.id}`}
@@ -58,35 +103,39 @@ function HabitRow({ habit, completed, pendingSync, onToggle, onPress }: HabitRow
         >
           {habit.name}
         </Text>
-        <Text className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
-          🔥 {streakLabel}
-          {pendingSync ? (
-            <Text
-              testID={`pending-sync-${habit.id}`}
-              className="text-xs text-slate-400 dark:text-slate-500"
-            >
-              {'  '}⏳
-            </Text>
-          ) : null}
-        </Text>
+        <Animated.View style={[{ alignSelf: 'flex-start' }, flameAnimatedStyle]}>
+          <Text className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
+            🔥 {streakLabel}
+            {pendingSync ? (
+              <Text
+                testID={`pending-sync-${habit.id}`}
+                className="text-xs text-slate-400 dark:text-slate-500"
+              >
+                {'  '}⏳
+              </Text>
+            ) : null}
+          </Text>
+        </Animated.View>
       </View>
-      <Pressable
-        testID={`toggle-${habit.id}`}
-        accessibilityRole="checkbox"
-        accessibilityState={{ checked: completed }}
-        accessibilityLabel={`Mark ${habit.name} ${completed ? 'not done' : 'done'} today`}
-        onPress={() => onToggle(habit.id)}
-        // Generous hit area: this is the primary daily interaction.
-        hitSlop={8}
-        className="h-10 w-10 items-center justify-center rounded-full border-2"
-        style={
-          completed
-            ? { backgroundColor: color, borderColor: color }
-            : { borderColor: inlineColors.uncheckedToggleBorder }
-        }
-      >
-        {completed ? <Text className="text-base font-bold text-white">✓</Text> : null}
-      </Pressable>
+      <Animated.View style={checkAnimatedStyle}>
+        <Pressable
+          testID={`toggle-${habit.id}`}
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: completed }}
+          accessibilityLabel={`Mark ${habit.name} ${completed ? 'not done' : 'done'} today`}
+          onPress={() => onToggle(habit.id)}
+          // Generous hit area: this is the primary daily interaction.
+          hitSlop={8}
+          className="h-10 w-10 items-center justify-center rounded-full border-2"
+          style={
+            completed
+              ? { backgroundColor: color, borderColor: color }
+              : { borderColor: inlineColors.uncheckedToggleBorder }
+          }
+        >
+          {completed ? <Text className="text-base font-bold text-white">✓</Text> : null}
+        </Pressable>
+      </Animated.View>
     </Pressable>
   );
 }
@@ -192,13 +241,19 @@ export function TodayScreen({ navigation }: Props) {
         data={habits}
         keyExtractor={(habit) => habit.id}
         renderItem={({ item }) => (
-          <HabitRow
-            habit={item}
-            completed={(completions[item.id] ?? []).includes(today)}
-            pendingSync={pendingSyncHabitIds.includes(item.id)}
-            onToggle={(habitId) => void handleToggle(habitId)}
-            onPress={(habitId) => navigation.navigate('HabitDetail', { habitId })}
-          />
+          // Reanimated's entering animation on the row wrapper is the least
+          // complex way to fade rows in as they mount: no per-item state, and
+          // it composes with FlatList recycling for free. Short and subtle by
+          // design — the list must never feel like it's waiting on it.
+          <Animated.View entering={FadeInDown.duration(220)}>
+            <HabitRow
+              habit={item}
+              completed={(completions[item.id] ?? []).includes(today)}
+              pendingSync={pendingSyncHabitIds.includes(item.id)}
+              onToggle={(habitId) => void handleToggle(habitId)}
+              onPress={(habitId) => navigation.navigate('HabitDetail', { habitId })}
+            />
+          </Animated.View>
         )}
         contentContainerClassName="flex-grow px-6 pb-6"
         refreshControl={

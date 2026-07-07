@@ -14,6 +14,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 
 import { Button } from '../components/Button';
 import { Screen } from '../components/Screen';
@@ -477,7 +478,13 @@ export function GroupsScreen({ navigation }: Props) {
         <FlatList
           data={events ?? []}
           keyExtractor={(event) => event.id}
-          renderItem={({ item }) => <FeedRow event={item} />}
+          renderItem={({ item }) => (
+            // Same subtle mount fade as the Today list (see TodayScreen) so
+            // realtime events slide into the feed instead of popping.
+            <Animated.View entering={FadeInDown.duration(220)}>
+              <FeedRow event={item} />
+            </Animated.View>
+          )}
           contentContainerClassName="flex-grow px-6 pb-6"
           ListHeaderComponent={header}
           refreshControl={
