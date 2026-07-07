@@ -20,4 +20,6 @@ export type AppStackParamList = {
   CreateGroup: undefined;
   /** Also the deep-link target (streaksync://join/CODE) — code pre-fills the input. */
   JoinGroup: { code?: string } | undefined;
+  /** Replay of the intro from Profile — never touches the "seen" flag. */
+  Onboarding: undefined;
 };

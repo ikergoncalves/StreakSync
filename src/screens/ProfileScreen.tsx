@@ -1,11 +1,20 @@
+import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
+import { CompositeScreenProps } from '@react-navigation/native';
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useState } from 'react';
 import { Text, View } from 'react-native';
 
 import { Button } from '../components/Button';
 import { Screen } from '../components/Screen';
+import { AppStackParamList, AppTabParamList } from '../navigation/types';
 import { useAuthStore } from '../store/auth';
 
-export function ProfileScreen() {
+type Props = CompositeScreenProps<
+  BottomTabScreenProps<AppTabParamList, 'Profile'>,
+  NativeStackScreenProps<AppStackParamList>
+>;
+
+export function ProfileScreen({ navigation }: Props) {
   const profile = useAuthStore((state) => state.profile);
   const user = useAuthStore((state) => state.user);
   const signOut = useAuthStore((state) => state.signOut);
@@ -48,7 +57,13 @@ export function ProfileScreen() {
           <Text className="mt-4 text-sm text-red-600 dark:text-red-400">{error}</Text>
         ) : null}
 
-        <View className="mt-10 w-full">
+        <View className="mt-10 w-full gap-3">
+          <Button
+            title="Replay intro"
+            variant="secondary"
+            onPress={() => navigation.navigate('Onboarding')}
+            testID="replay-intro-button"
+          />
           <Button
             title="Sign out"
             variant="secondary"

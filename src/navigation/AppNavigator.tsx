@@ -12,6 +12,7 @@ import { GroupsScreen } from '../screens/GroupsScreen';
 import { HabitDetailScreen } from '../screens/HabitDetailScreen';
 import { HabitFormScreen } from '../screens/HabitFormScreen';
 import { JoinGroupScreen } from '../screens/JoinGroupScreen';
+import { OnboardingScreen } from '../screens/OnboardingScreen';
 import { ProfileScreen } from '../screens/ProfileScreen';
 import { TodayScreen } from '../screens/TodayScreen';
 import { useGroupsStore } from '../store/groups';
@@ -91,6 +92,11 @@ export function AppNavigator() {
       <Stack.Screen
         name="JoinGroup"
         component={JoinGroupScreen}
+        options={{ presentation: 'modal' }}
+      />
+      <Stack.Screen
+        name="Onboarding"
+        component={OnboardingScreen}
         options={{ presentation: 'modal' }}
       />
     </Stack.Navigator>
