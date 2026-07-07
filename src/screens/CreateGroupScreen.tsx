@@ -44,22 +44,25 @@ export function CreateGroupScreen({ navigation }: Props) {
         className="flex-1"
       >
         <View className="flex-row items-center justify-between px-6 pb-2 pt-4">
-          <Text className="text-2xl font-bold text-slate-900">New group</Text>
+          <Text className="text-2xl font-bold text-slate-900 dark:text-slate-50">New group</Text>
           <Pressable
             testID="close-create-group-button"
             accessibilityRole="button"
             accessibilityLabel="Close"
             onPress={() => navigation.goBack()}
-            className="h-10 w-10 items-center justify-center rounded-full bg-slate-200 active:bg-slate-300"
+            className="h-10 w-10 items-center justify-center rounded-full bg-slate-200 active:bg-slate-300 dark:bg-slate-800 dark:active:bg-slate-700"
           >
-            <Text className="text-base text-slate-600">✕</Text>
+            <Text className="text-base text-slate-600 dark:text-slate-300">✕</Text>
           </Pressable>
         </View>
 
         <View className="px-6 pt-2">
           {formError ? (
-            <View testID="create-group-error" className="mb-4 rounded-xl bg-red-50 px-4 py-3">
-              <Text className="text-sm text-red-700">{formError}</Text>
+            <View
+              testID="create-group-error"
+              className="mb-4 rounded-xl bg-red-50 px-4 py-3 dark:bg-red-950"
+            >
+              <Text className="text-sm text-red-700 dark:text-red-300">{formError}</Text>
             </View>
           ) : null}
 
@@ -71,7 +74,7 @@ export function CreateGroupScreen({ navigation }: Props) {
             maxLength={50}
             testID="group-name-input"
           />
-          <Text className="mb-6 text-sm text-slate-500">
+          <Text className="mb-6 text-sm text-slate-500 dark:text-slate-400">
             You&apos;ll get an invite code to share with friends right after.
           </Text>
           <Button

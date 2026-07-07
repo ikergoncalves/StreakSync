@@ -45,14 +45,17 @@ export function SignInScreen({ navigation }: Props) {
           contentContainerClassName="flex-grow justify-center px-6 py-8"
           keyboardShouldPersistTaps="handled"
         >
-          <Text className="text-3xl font-bold text-slate-900">StreakSync</Text>
-          <Text className="mb-8 mt-1 text-base text-slate-500">
+          <Text className="text-3xl font-bold text-slate-900 dark:text-slate-50">StreakSync</Text>
+          <Text className="mb-8 mt-1 text-base text-slate-500 dark:text-slate-400">
             Keep your streaks alive, together.
           </Text>
 
           {formError ? (
-            <View testID="form-error" className="mb-4 rounded-xl bg-red-50 px-4 py-3">
-              <Text className="text-sm text-red-700">{formError}</Text>
+            <View
+              testID="form-error"
+              className="mb-4 rounded-xl bg-red-50 px-4 py-3 dark:bg-red-950"
+            >
+              <Text className="text-sm text-red-700 dark:text-red-300">{formError}</Text>
             </View>
           ) : null}
 
@@ -88,15 +91,17 @@ export function SignInScreen({ navigation }: Props) {
             onPress={() => navigation.navigate('ForgotPassword')}
             accessibilityRole="link"
           >
-            <Text className="text-center text-sm font-medium text-emerald-700">
+            <Text className="text-center text-sm font-medium text-emerald-700 dark:text-emerald-400">
               Forgot your password?
             </Text>
           </Pressable>
 
           <View className="mt-10 flex-row justify-center">
-            <Text className="text-sm text-slate-500">New here? </Text>
+            <Text className="text-sm text-slate-500 dark:text-slate-400">New here? </Text>
             <Pressable onPress={() => navigation.navigate('SignUp')} accessibilityRole="link">
-              <Text className="text-sm font-semibold text-emerald-700">Create an account</Text>
+              <Text className="text-sm font-semibold text-emerald-700 dark:text-emerald-400">
+                Create an account
+              </Text>
             </Pressable>
           </View>
         </ScrollView>

@@ -7,11 +7,13 @@ import {
   Pressable,
   Text,
   TextInput,
+  useColorScheme,
   View,
 } from 'react-native';
 
 import { Button } from '../components/Button';
 import { Screen } from '../components/Screen';
+import { getInlineColors } from '../lib/theme';
 import { AppStackParamList } from '../navigation/types';
 import { useGroupsStore } from '../store/groups';
 
@@ -30,6 +32,7 @@ function normalizeCode(raw: string): string {
  */
 export function JoinGroupScreen({ navigation, route }: Props) {
   const joinByCode = useGroupsStore((state) => state.joinByCode);
+  const inlineColors = getInlineColors(useColorScheme());
   const [code, setCode] = useState(() => normalizeCode(route.params?.code ?? ''));
   const [error, setError] = useState<string | null>(null);
   const [isJoining, setIsJoining] = useState(false);
@@ -60,39 +63,44 @@ export function JoinGroupScreen({ navigation, route }: Props) {
         className="flex-1"
       >
         <View className="flex-row items-center justify-between px-6 pb-2 pt-4">
-          <Text className="text-2xl font-bold text-slate-900">Join a group</Text>
+          <Text className="text-2xl font-bold text-slate-900 dark:text-slate-50">Join a group</Text>
           <Pressable
             testID="close-join-group-button"
             accessibilityRole="button"
             accessibilityLabel="Close"
             onPress={() => navigation.goBack()}
-            className="h-10 w-10 items-center justify-center rounded-full bg-slate-200 active:bg-slate-300"
+            className="h-10 w-10 items-center justify-center rounded-full bg-slate-200 active:bg-slate-300 dark:bg-slate-800 dark:active:bg-slate-700"
           >
-            <Text className="text-base text-slate-600">✕</Text>
+            <Text className="text-base text-slate-600 dark:text-slate-300">✕</Text>
           </Pressable>
         </View>
 
         <View className="px-6 pt-2">
           {error ? (
-            <View testID="join-group-error" className="mb-4 rounded-xl bg-red-50 px-4 py-3">
-              <Text className="text-sm text-red-700">{error}</Text>
+            <View
+              testID="join-group-error"
+              className="mb-4 rounded-xl bg-red-50 px-4 py-3 dark:bg-red-950"
+            >
+              <Text className="text-sm text-red-700 dark:text-red-300">{error}</Text>
             </View>
           ) : null}
 
-          <Text className="mb-1.5 text-sm font-medium text-slate-700">Invite code</Text>
+          <Text className="mb-1.5 text-sm font-medium text-slate-700 dark:text-slate-300">
+            Invite code
+          </Text>
           <TextInput
             testID="invite-code-input"
-            className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-lg tracking-widest text-slate-900"
+            className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-lg tracking-widest text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-50"
             style={{ fontFamily: MONOSPACE }}
             placeholder="A7K2M9XZ"
-            placeholderTextColor="#94a3b8"
+            placeholderTextColor={inlineColors.placeholder}
             autoCapitalize="characters"
             autoCorrect={false}
             maxLength={8}
             value={code}
             onChangeText={(text) => setCode(normalizeCode(text))}
           />
-          <Text className="mb-6 mt-2 text-sm text-slate-500">
+          <Text className="mb-6 mt-2 text-sm text-slate-500 dark:text-slate-400">
             Ask a friend for their group&apos;s 8-character code, or open their invite link.
           </Text>
           <Button

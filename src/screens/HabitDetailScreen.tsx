@@ -1,11 +1,12 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useState } from 'react';
-import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, Text, useColorScheme, View } from 'react-native';
 
 import { Button } from '../components/Button';
 import { Screen } from '../components/Screen';
 import { useHabitStreak } from '../hooks/useHabitStreak';
 import { addDays, startOfWeek, todayLocalISO } from '../lib/streaks';
+import { getInlineColors } from '../lib/theme';
 import { AppStackParamList } from '../navigation/types';
 import { useHabitsStore } from '../store/habits';
 
@@ -23,6 +24,7 @@ interface HistoryGridProps {
 
 /** Monday-based grid of the last WEEKS_SHOWN weeks, oldest week on top. */
 function HistoryGrid({ completedDates, today, color }: HistoryGridProps) {
+  const inlineColors = getInlineColors(useColorScheme());
   const completed = new Set(completedDates);
   const currentWeekStart = startOfWeek(today);
   const weeks: string[][] = [];
@@ -35,7 +37,7 @@ function HistoryGrid({ completedDates, today, color }: HistoryGridProps) {
     <View testID="history-grid">
       <View className="mb-1.5 flex-row gap-1.5">
         {DAY_LABELS.map((label, index) => (
-          <Text key={index} className="flex-1 text-center text-xs text-slate-400">
+          <Text key={index} className="flex-1 text-center text-xs text-slate-400 dark:text-slate-500">
             {label}
           </Text>
         ))}
@@ -52,10 +54,10 @@ function HistoryGrid({ completedDates, today, color }: HistoryGridProps) {
                 testID={isDone ? `history-done-${date}` : undefined}
                 className="aspect-square flex-1 rounded-md"
                 style={{
-                  backgroundColor: isDone ? color : '#e2e8f0',
+                  backgroundColor: isDone ? color : inlineColors.gridEmptyCell,
                   opacity: isFuture ? 0.3 : 1,
                   borderWidth: date === today ? 2 : 0,
-                  borderColor: '#0f172a',
+                  borderColor: inlineColors.gridTodayOutline,
                 }}
               />
             );
@@ -68,9 +70,9 @@ function HistoryGrid({ completedDates, today, color }: HistoryGridProps) {
 
 function StatCard({ label, value }: { label: string; value: string }) {
   return (
-    <View className="flex-1 rounded-2xl bg-white p-4 shadow-sm">
-      <Text className="text-sm text-slate-500">{label}</Text>
-      <Text className="mt-1 text-2xl font-bold text-slate-900">{value}</Text>
+    <View className="flex-1 rounded-2xl bg-white p-4 shadow-sm dark:bg-slate-900">
+      <Text className="text-sm text-slate-500 dark:text-slate-400">{label}</Text>
+      <Text className="mt-1 text-2xl font-bold text-slate-900 dark:text-slate-50">{value}</Text>
     </View>
   );
 }
@@ -133,16 +135,16 @@ export function HabitDetailScreen({ navigation, route }: Props) {
           hitSlop={8}
           className="h-10 w-10 items-center justify-center rounded-full"
         >
-          <Text className="text-3xl leading-9 text-slate-700">‹</Text>
+          <Text className="text-3xl leading-9 text-slate-700 dark:text-slate-200">‹</Text>
         </Pressable>
         <View className="flex-1" />
         <Pressable
           testID="edit-habit-button"
           accessibilityRole="button"
           onPress={() => navigation.navigate('HabitForm', { habitId: habit.id })}
-          className="h-10 items-center justify-center rounded-full bg-slate-200 px-4 active:bg-slate-300"
+          className="h-10 items-center justify-center rounded-full bg-slate-200 px-4 active:bg-slate-300 dark:bg-slate-800 dark:active:bg-slate-700"
         >
-          <Text className="text-sm font-semibold text-slate-700">Edit</Text>
+          <Text className="text-sm font-semibold text-slate-700 dark:text-slate-200">Edit</Text>
         </Pressable>
       </View>
 
@@ -155,8 +157,10 @@ export function HabitDetailScreen({ navigation, route }: Props) {
             <Text className="text-2xl">{habit.icon ?? '✅'}</Text>
           </View>
           <View className="ml-3 flex-1">
-            <Text className="text-2xl font-bold text-slate-900">{habit.name}</Text>
-            <Text className="mt-0.5 text-sm text-slate-500">
+            <Text className="text-2xl font-bold text-slate-900 dark:text-slate-50">
+              {habit.name}
+            </Text>
+            <Text className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
               {habit.frequency === 'weekly'
                 ? `Weekly · ${habit.target_days_per_week ?? 1}x per week`
                 : 'Daily'}
@@ -165,7 +169,9 @@ export function HabitDetailScreen({ navigation, route }: Props) {
         </View>
 
         {habit.description ? (
-          <Text className="mt-4 text-base text-slate-600">{habit.description}</Text>
+          <Text className="mt-4 text-base text-slate-600 dark:text-slate-300">
+            {habit.description}
+          </Text>
         ) : null}
 
         <View className="mt-6 flex-row gap-3">
@@ -173,14 +179,17 @@ export function HabitDetailScreen({ navigation, route }: Props) {
           <StatCard label="Longest streak" value={`🏆 ${formatStreak(streak.longest)}`} />
         </View>
 
-        <Text className="mb-3 mt-8 text-base font-semibold text-slate-900">
+        <Text className="mb-3 mt-8 text-base font-semibold text-slate-900 dark:text-slate-50">
           Last {WEEKS_SHOWN} weeks
         </Text>
         <HistoryGrid completedDates={completedDates ?? []} today={todayLocalISO()} color={color} />
 
         {error ? (
-          <View testID="detail-error" className="mt-6 rounded-xl bg-red-50 px-4 py-3">
-            <Text className="text-sm text-red-700">{error}</Text>
+          <View
+            testID="detail-error"
+            className="mt-6 rounded-xl bg-red-50 px-4 py-3 dark:bg-red-950"
+          >
+            <Text className="text-sm text-red-700 dark:text-red-300">{error}</Text>
           </View>
         ) : null}
 

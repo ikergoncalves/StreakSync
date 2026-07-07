@@ -11,7 +11,7 @@ export function RootNavigator() {
   if (isLoading) {
     // Shown briefly on launch while the persisted session is restored.
     return (
-      <View className="flex-1 items-center justify-center bg-slate-50">
+      <View className="flex-1 items-center justify-center bg-slate-50 dark:bg-slate-950">
         <ActivityIndicator size="large" color="#059669" />
       </View>
     );

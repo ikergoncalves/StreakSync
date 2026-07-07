@@ -42,7 +42,11 @@ function toHabitInput(values: HabitFormInput): HabitInput {
 }
 
 function FieldLabel({ children }: { children: string }) {
-  return <Text className="mb-1.5 text-sm font-medium text-slate-700">{children}</Text>;
+  return (
+    <Text className="mb-1.5 text-sm font-medium text-slate-700 dark:text-slate-300">
+      {children}
+    </Text>
+  );
 }
 
 export function HabitFormScreen({ navigation, route }: Props) {
@@ -99,7 +103,7 @@ export function HabitFormScreen({ navigation, route }: Props) {
         className="flex-1"
       >
         <View className="flex-row items-center justify-between px-6 pb-2 pt-4">
-          <Text className="text-2xl font-bold text-slate-900">
+          <Text className="text-2xl font-bold text-slate-900 dark:text-slate-50">
             {habit ? 'Edit habit' : 'New habit'}
           </Text>
           <Pressable
@@ -107,16 +111,19 @@ export function HabitFormScreen({ navigation, route }: Props) {
             accessibilityRole="button"
             accessibilityLabel="Close"
             onPress={() => navigation.goBack()}
-            className="h-10 w-10 items-center justify-center rounded-full bg-slate-200 active:bg-slate-300"
+            className="h-10 w-10 items-center justify-center rounded-full bg-slate-200 active:bg-slate-300 dark:bg-slate-800 dark:active:bg-slate-700"
           >
-            <Text className="text-base text-slate-600">✕</Text>
+            <Text className="text-base text-slate-600 dark:text-slate-300">✕</Text>
           </Pressable>
         </View>
 
         <ScrollView contentContainerClassName="px-6 pb-8 pt-2" keyboardShouldPersistTaps="handled">
           {formError ? (
-            <View testID="form-error" className="mb-4 rounded-xl bg-red-50 px-4 py-3">
-              <Text className="text-sm text-red-700">{formError}</Text>
+            <View
+              testID="form-error"
+              className="mb-4 rounded-xl bg-red-50 px-4 py-3 dark:bg-red-950"
+            >
+              <Text className="text-sm text-red-700 dark:text-red-300">{formError}</Text>
             </View>
           ) : null}
 
@@ -154,8 +161,8 @@ export function HabitFormScreen({ navigation, route }: Props) {
                       onPress={() => onChange(icon)}
                       className={`h-11 w-11 items-center justify-center rounded-xl border ${
                         value === icon
-                          ? 'border-emerald-600 bg-emerald-50'
-                          : 'border-slate-200 bg-white'
+                          ? 'border-emerald-600 bg-emerald-50 dark:bg-emerald-950'
+                          : 'border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900'
                       }`}
                     >
                       <Text className="text-xl">{icon}</Text>
@@ -181,7 +188,7 @@ export function HabitFormScreen({ navigation, route }: Props) {
                       accessibilityState={{ selected: value === color }}
                       onPress={() => onChange(color)}
                       className={`h-10 w-10 rounded-full ${
-                        value === color ? 'border-2 border-slate-900' : ''
+                        value === color ? 'border-2 border-slate-900 dark:border-slate-50' : ''
                       }`}
                       style={{ backgroundColor: color }}
                     />
@@ -197,7 +204,7 @@ export function HabitFormScreen({ navigation, route }: Props) {
             render={({ field: { value, onChange } }) => (
               <View className="mb-4">
                 <FieldLabel>Frequency</FieldLabel>
-                <View className="flex-row rounded-xl bg-slate-200 p-1">
+                <View className="flex-row rounded-xl bg-slate-200 p-1 dark:bg-slate-800">
                   {(['daily', 'weekly'] as const).map((option) => (
                     <Pressable
                       key={option}
@@ -206,12 +213,14 @@ export function HabitFormScreen({ navigation, route }: Props) {
                       accessibilityState={{ selected: value === option }}
                       onPress={() => onChange(option)}
                       className={`flex-1 items-center rounded-lg py-2 ${
-                        value === option ? 'bg-white' : ''
+                        value === option ? 'bg-white dark:bg-slate-950' : ''
                       }`}
                     >
                       <Text
                         className={`text-sm font-medium ${
-                          value === option ? 'text-slate-900' : 'text-slate-500'
+                          value === option
+                            ? 'text-slate-900 dark:text-slate-50'
+                            : 'text-slate-500 dark:text-slate-400'
                         }`}
                       >
                         {option === 'daily' ? 'Daily' : 'Weekly'}
@@ -241,12 +250,14 @@ export function HabitFormScreen({ navigation, route }: Props) {
                         className={`h-10 flex-1 items-center justify-center rounded-lg border ${
                           value === target
                             ? 'border-emerald-600 bg-emerald-600'
-                            : 'border-slate-200 bg-white'
+                            : 'border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900'
                         }`}
                       >
                         <Text
                           className={
-                            value === target ? 'font-semibold text-white' : 'text-slate-700'
+                            value === target
+                              ? 'font-semibold text-white'
+                              : 'text-slate-700 dark:text-slate-300'
                           }
                         >
                           {target}
@@ -255,7 +266,9 @@ export function HabitFormScreen({ navigation, route }: Props) {
                     ))}
                   </View>
                   {error ? (
-                    <Text className="mt-1 text-xs text-red-600">{error.message}</Text>
+                    <Text className="mt-1 text-xs text-red-600 dark:text-red-400">
+                      {error.message}
+                    </Text>
                   ) : null}
                 </View>
               )}

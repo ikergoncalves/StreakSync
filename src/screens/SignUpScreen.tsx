@@ -45,8 +45,10 @@ export function SignUpScreen({ navigation }: Props) {
     return (
       <Screen>
         <View className="flex-1 justify-center px-6">
-          <Text className="text-3xl font-bold text-slate-900">Check your inbox</Text>
-          <Text className="mb-8 mt-2 text-base text-slate-500">
+          <Text className="text-3xl font-bold text-slate-900 dark:text-slate-50">
+            Check your inbox
+          </Text>
+          <Text className="mb-8 mt-2 text-base text-slate-500 dark:text-slate-400">
             We sent you a confirmation link. Open it to activate your account, then sign in.
           </Text>
           <Button title="Back to sign in" onPress={() => navigation.navigate('SignIn')} />
@@ -65,14 +67,19 @@ export function SignUpScreen({ navigation }: Props) {
           contentContainerClassName="flex-grow justify-center px-6 py-8"
           keyboardShouldPersistTaps="handled"
         >
-          <Text className="text-3xl font-bold text-slate-900">Create your account</Text>
-          <Text className="mb-8 mt-1 text-base text-slate-500">
+          <Text className="text-3xl font-bold text-slate-900 dark:text-slate-50">
+            Create your account
+          </Text>
+          <Text className="mb-8 mt-1 text-base text-slate-500 dark:text-slate-400">
             Track habits and keep each other accountable.
           </Text>
 
           {formError ? (
-            <View testID="form-error" className="mb-4 rounded-xl bg-red-50 px-4 py-3">
-              <Text className="text-sm text-red-700">{formError}</Text>
+            <View
+              testID="form-error"
+              className="mb-4 rounded-xl bg-red-50 px-4 py-3 dark:bg-red-950"
+            >
+              <Text className="text-sm text-red-700 dark:text-red-300">{formError}</Text>
             </View>
           ) : null}
 
@@ -113,9 +120,13 @@ export function SignUpScreen({ navigation }: Props) {
           />
 
           <View className="mt-10 flex-row justify-center">
-            <Text className="text-sm text-slate-500">Already have an account? </Text>
+            <Text className="text-sm text-slate-500 dark:text-slate-400">
+              Already have an account?{' '}
+            </Text>
             <Pressable onPress={() => navigation.navigate('SignIn')} accessibilityRole="link">
-              <Text className="text-sm font-semibold text-emerald-700">Sign in</Text>
+              <Text className="text-sm font-semibold text-emerald-700 dark:text-emerald-400">
+                Sign in
+              </Text>
             </Pressable>
           </View>
         </ScrollView>

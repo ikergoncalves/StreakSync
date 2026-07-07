@@ -22,6 +22,7 @@ import { useIsOnline } from '../hooks/useIsOnline';
 import { GroupWithMemberCount } from '../lib/groups';
 import { isSoleOwner } from '../lib/membership';
 import { formatRelativeTime } from '../lib/relativeTime';
+import { ACCENT } from '../lib/theme';
 import { AppStackParamList, AppTabParamList } from '../navigation/types';
 import { useAuthStore } from '../store/auth';
 import { LeaderboardEntry, selectLeaderboard, useGroupsStore } from '../store/groups';
@@ -86,10 +87,16 @@ function GroupSelector({
             accessibilityState={{ selected: active }}
             onPress={() => onSelect(group.id)}
             className={`rounded-full border px-4 py-2 ${
-              active ? 'border-emerald-600 bg-emerald-600' : 'border-slate-300 bg-white'
+              active
+                ? 'border-emerald-600 bg-emerald-600'
+                : 'border-slate-300 bg-white dark:border-slate-700 dark:bg-slate-900'
             }`}
           >
-            <Text className={`text-sm font-medium ${active ? 'text-white' : 'text-slate-700'}`}>
+            <Text
+              className={`text-sm font-medium ${
+                active ? 'text-white' : 'text-slate-700 dark:text-slate-200'
+              }`}
+            >
               {group.name}
             </Text>
           </Pressable>
@@ -132,13 +139,15 @@ function InviteCard({
   };
 
   return (
-    <View className="mb-4 rounded-2xl bg-white p-4 shadow-sm">
+    <View className="mb-4 rounded-2xl bg-white p-4 shadow-sm dark:bg-slate-900">
       <View className="flex-row items-center justify-between">
         <View className="flex-1 pr-3">
-          <Text className="text-xs font-medium uppercase text-slate-400">Invite code</Text>
+          <Text className="text-xs font-medium uppercase text-slate-400 dark:text-slate-500">
+            Invite code
+          </Text>
           <Text
             testID="invite-code"
-            className="mt-0.5 text-lg font-bold tracking-widest text-slate-900"
+            className="mt-0.5 text-lg font-bold tracking-widest text-slate-900 dark:text-slate-50"
             style={{ fontFamily: MONOSPACE }}
           >
             {group.invite_code}
@@ -149,9 +158,11 @@ function InviteCard({
           accessibilityRole="button"
           accessibilityLabel="Copy invite code"
           onPress={() => void handleCopy()}
-          className="rounded-lg bg-slate-100 px-3 py-2 active:bg-slate-200"
+          className="rounded-lg bg-slate-100 px-3 py-2 active:bg-slate-200 dark:bg-slate-800 dark:active:bg-slate-700"
         >
-          <Text className="text-sm font-medium text-slate-700">{copied ? 'Copied!' : 'Copy'}</Text>
+          <Text className="text-sm font-medium text-slate-700 dark:text-slate-200">
+            {copied ? 'Copied!' : 'Copy'}
+          </Text>
         </Pressable>
       </View>
       <View className="mt-3 flex-row items-center justify-between">
@@ -164,9 +175,9 @@ function InviteCard({
             accessibilityRole="button"
             accessibilityLabel={`Delete ${group.name}`}
             onPress={() => onDelete(group)}
-            className="rounded-lg px-3 py-2 active:bg-red-50"
+            className="rounded-lg px-3 py-2 active:bg-red-50 dark:active:bg-red-950"
           >
-            <Text className="text-sm font-medium text-red-600">Delete group</Text>
+            <Text className="text-sm font-medium text-red-600 dark:text-red-400">Delete group</Text>
           </Pressable>
         ) : (
           <Pressable
@@ -174,9 +185,9 @@ function InviteCard({
             accessibilityRole="button"
             accessibilityLabel={`Leave ${group.name}`}
             onPress={() => onLeave(group)}
-            className="rounded-lg px-3 py-2 active:bg-red-50"
+            className="rounded-lg px-3 py-2 active:bg-red-50 dark:active:bg-red-950"
           >
-            <Text className="text-sm font-medium text-red-600">Leave</Text>
+            <Text className="text-sm font-medium text-red-600 dark:text-red-400">Leave</Text>
           </Pressable>
         )}
       </View>
@@ -188,16 +199,21 @@ function LeaderboardRow({ entry, rank }: { entry: LeaderboardEntry; rank: number
   return (
     <View
       testID={`leaderboard-row-${rank}`}
-      className="flex-row items-center border-b border-slate-100 py-3 last:border-b-0"
+      className="flex-row items-center border-b border-slate-100 py-3 last:border-b-0 dark:border-slate-800"
     >
       <Text className="w-9 text-center text-base">{RANK_BADGES[rank - 1] ?? `${rank}`}</Text>
       <View className="ml-2 flex-1">
-        <Text className="text-base font-semibold text-slate-900" numberOfLines={1}>
+        <Text
+          className="text-base font-semibold text-slate-900 dark:text-slate-50"
+          numberOfLines={1}
+        >
           {entry.displayName}
         </Text>
-        <Text className="text-xs text-slate-500">@{entry.username}</Text>
+        <Text className="text-xs text-slate-500 dark:text-slate-400">@{entry.username}</Text>
       </View>
-      <Text className="text-base font-semibold text-slate-700">🔥 {entry.totalStreak}</Text>
+      <Text className="text-base font-semibold text-slate-700 dark:text-slate-200">
+        🔥 {entry.totalStreak}
+      </Text>
     </View>
   );
 }
@@ -207,12 +223,12 @@ function FeedRow({ event }: { event: ActivityEventWithProfile }) {
   return (
     <View
       testID={`feed-row-${event.id}`}
-      className="mb-3 flex-row rounded-2xl bg-white p-4 shadow-sm"
+      className="mb-3 flex-row rounded-2xl bg-white p-4 shadow-sm dark:bg-slate-900"
     >
       <Text className="text-xl">{icon}</Text>
       <View className="ml-3 flex-1">
-        <Text className="text-sm text-slate-900">{message}</Text>
-        <Text className="mt-0.5 text-xs text-slate-400">
+        <Text className="text-sm text-slate-900 dark:text-slate-50">{message}</Text>
+        <Text className="mt-0.5 text-xs text-slate-400 dark:text-slate-500">
           {formatRelativeTime(event.created_at)}
         </Text>
       </View>
@@ -230,8 +246,10 @@ function OfflineState() {
   return (
     <View testID="groups-offline" className="flex-1 items-center justify-center py-16">
       <Text className="text-5xl">📡</Text>
-      <Text className="mt-4 text-xl font-semibold text-slate-900">You&apos;re offline</Text>
-      <Text className="mt-1 px-8 text-center text-base text-slate-500">
+      <Text className="mt-4 text-xl font-semibold text-slate-900 dark:text-slate-50">
+        You&apos;re offline
+      </Text>
+      <Text className="mt-1 px-8 text-center text-base text-slate-500 dark:text-slate-400">
         Groups need a connection. Your habits still work from the Today tab, and everything syncs
         when you&apos;re back online.
       </Text>
@@ -243,8 +261,10 @@ function NoGroups({ onCreate, onJoin }: { onCreate: () => void; onJoin: () => vo
   return (
     <View testID="groups-empty-state" className="flex-1 items-center justify-center py-16">
       <Text className="text-5xl">👥</Text>
-      <Text className="mt-4 text-xl font-semibold text-slate-900">No groups yet</Text>
-      <Text className="mt-1 px-8 text-center text-base text-slate-500">
+      <Text className="mt-4 text-xl font-semibold text-slate-900 dark:text-slate-50">
+        No groups yet
+      </Text>
+      <Text className="mt-1 px-8 text-center text-base text-slate-500 dark:text-slate-400">
         Create a group and invite friends, or join one with an invite code.
       </Text>
       <View className="mt-8 w-full gap-3 px-6">
@@ -391,17 +411,21 @@ export function GroupsScreen({ navigation }: Props) {
             onLeave={handleLeave}
             onDelete={handleDelete}
           />
-          <Text className="mb-2 text-lg font-bold text-slate-900">Leaderboard</Text>
-          <View className="mb-4 rounded-2xl bg-white px-4 shadow-sm">
+          <Text className="mb-2 text-lg font-bold text-slate-900 dark:text-slate-50">
+            Leaderboard
+          </Text>
+          <View className="mb-4 rounded-2xl bg-white px-4 shadow-sm dark:bg-slate-900">
             {leaderboard.length === 0 ? (
-              <Text className="py-4 text-sm text-slate-500">Loading members…</Text>
+              <Text className="py-4 text-sm text-slate-500 dark:text-slate-400">
+                Loading members…
+              </Text>
             ) : (
               leaderboard.map((entry, index) => (
                 <LeaderboardRow key={entry.userId} entry={entry} rank={index + 1} />
               ))
             )}
           </View>
-          <Text className="mb-2 text-lg font-bold text-slate-900">Activity</Text>
+          <Text className="mb-2 text-lg font-bold text-slate-900 dark:text-slate-50">Activity</Text>
         </>
       ) : null}
     </View>
@@ -410,16 +434,16 @@ export function GroupsScreen({ navigation }: Props) {
   return (
     <Screen edges={['top']}>
       <View className="flex-row items-center justify-between px-6 pb-4 pt-2">
-        <Text className="text-3xl font-bold text-slate-900">Groups</Text>
+        <Text className="text-3xl font-bold text-slate-900 dark:text-slate-50">Groups</Text>
         <View className="flex-row items-center gap-2">
           <Pressable
             testID="join-group-button"
             accessibilityRole="button"
             accessibilityLabel="Join a group"
             onPress={() => navigation.navigate('JoinGroup')}
-            className="h-11 items-center justify-center rounded-full bg-slate-200 px-4 active:bg-slate-300"
+            className="h-11 items-center justify-center rounded-full bg-slate-200 px-4 active:bg-slate-300 dark:bg-slate-800 dark:active:bg-slate-700"
           >
-            <Text className="text-sm font-semibold text-slate-700">Join</Text>
+            <Text className="text-sm font-semibold text-slate-700 dark:text-slate-200">Join</Text>
           </Pressable>
           <Pressable
             testID="create-group-button"
@@ -434,8 +458,11 @@ export function GroupsScreen({ navigation }: Props) {
       </View>
 
       {error ? (
-        <View testID="groups-error" className="mx-6 mb-3 rounded-xl bg-red-50 px-4 py-3">
-          <Text className="text-sm text-red-700">{error}</Text>
+        <View
+          testID="groups-error"
+          className="mx-6 mb-3 rounded-xl bg-red-50 px-4 py-3 dark:bg-red-950"
+        >
+          <Text className="text-sm text-red-700 dark:text-red-300">{error}</Text>
         </View>
       ) : null}
 
@@ -457,12 +484,12 @@ export function GroupsScreen({ navigation }: Props) {
             <RefreshControl
               refreshing={isRefreshing}
               onRefresh={handleRefresh}
-              tintColor="#059669"
+              tintColor={ACCENT}
             />
           }
           ListEmptyComponent={
             activeGroup ? (
-              <Text testID="feed-empty" className="text-sm text-slate-500">
+              <Text testID="feed-empty" className="text-sm text-slate-500 dark:text-slate-400">
                 No activity yet. Check off a habit or invite a friend to get things moving!
               </Text>
             ) : null

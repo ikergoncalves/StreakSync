@@ -4,8 +4,10 @@ import { LinkingOptions, NavigationContainer } from '@react-navigation/native';
 import * as Linking from 'expo-linking';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
+import { useColorScheme } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { getNavigationTheme } from './src/lib/theme';
 import { RootNavigator } from './src/navigation/RootNavigator';
 import { AppStackParamList } from './src/navigation/types';
 import { useAuthStore } from './src/store/auth';
@@ -27,6 +29,11 @@ const linking: LinkingOptions<AppStackParamList> = {
 
 export default function App() {
   const initialize = useAuthStore((state) => state.initialize);
+  // NativeWind's dark: classes follow the OS on their own; the navigation
+  // theme (tab bar, transition backgrounds) and status bar can't, so they
+  // get the color scheme explicitly. "auto" flips the status bar content
+  // between dark-on-light and light-on-dark with the OS appearance.
+  const colorScheme = useColorScheme();
 
   useEffect(() => {
     void initialize();
@@ -34,9 +41,9 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      <NavigationContainer linking={linking}>
+      <NavigationContainer linking={linking} theme={getNavigationTheme(colorScheme)}>
         <RootNavigator />
-        <StatusBar style="dark" />
+        <StatusBar style="auto" />
       </NavigationContainer>
     </SafeAreaProvider>
   );

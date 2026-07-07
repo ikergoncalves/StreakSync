@@ -15,7 +15,7 @@ export function Screen({ children, edges = ['top', 'bottom'] }: ScreenProps) {
 
   return (
     <View
-      className="flex-1 bg-slate-50"
+      className="flex-1 bg-slate-50 dark:bg-slate-950"
       style={{
         paddingTop: edges.includes('top') ? insets.top : 0,
         paddingBottom: edges.includes('bottom') ? insets.bottom : 0,

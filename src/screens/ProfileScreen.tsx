@@ -27,20 +27,26 @@ export function ProfileScreen() {
   return (
     <Screen edges={['top']}>
       <View className="px-6 pb-4 pt-2">
-        <Text className="text-3xl font-bold text-slate-900">Profile</Text>
+        <Text className="text-3xl font-bold text-slate-900 dark:text-slate-50">Profile</Text>
       </View>
 
       <View className="flex-1 items-center justify-center px-6">
         <Text className="text-5xl">🔥</Text>
-        <Text className="mt-4 text-2xl font-bold text-slate-900">{displayName}</Text>
+        <Text className="mt-4 text-2xl font-bold text-slate-900 dark:text-slate-50">
+          {displayName}
+        </Text>
         {profile ? (
-          <Text className="mt-1 text-base text-slate-500">@{profile.username}</Text>
+          <Text className="mt-1 text-base text-slate-500 dark:text-slate-400">
+            @{profile.username}
+          </Text>
         ) : null}
-        <Text className="mt-2 text-center text-base text-slate-500">
-          Groups and shared streaks arrive in Phase 3.
+        <Text className="mt-2 text-center text-base text-slate-500 dark:text-slate-400">
+          Keep your streaks alive, together.
         </Text>
 
-        {error ? <Text className="mt-4 text-sm text-red-600">{error}</Text> : null}
+        {error ? (
+          <Text className="mt-4 text-sm text-red-600 dark:text-red-400">{error}</Text>
+        ) : null}
 
         <View className="mt-10 w-full">
           <Button

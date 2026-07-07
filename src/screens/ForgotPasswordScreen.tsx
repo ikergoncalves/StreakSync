@@ -41,8 +41,8 @@ export function ForgotPasswordScreen({ navigation }: Props) {
     return (
       <Screen>
         <View className="flex-1 justify-center px-6">
-          <Text className="text-3xl font-bold text-slate-900">Email sent</Text>
-          <Text className="mb-8 mt-2 text-base text-slate-500">
+          <Text className="text-3xl font-bold text-slate-900 dark:text-slate-50">Email sent</Text>
+          <Text className="mb-8 mt-2 text-base text-slate-500 dark:text-slate-400">
             If an account exists for that email, you will receive a password reset link shortly.
           </Text>
           <Button title="Back to sign in" onPress={() => navigation.navigate('SignIn')} />
@@ -61,14 +61,19 @@ export function ForgotPasswordScreen({ navigation }: Props) {
           contentContainerClassName="flex-grow justify-center px-6 py-8"
           keyboardShouldPersistTaps="handled"
         >
-          <Text className="text-3xl font-bold text-slate-900">Reset your password</Text>
-          <Text className="mb-8 mt-1 text-base text-slate-500">
+          <Text className="text-3xl font-bold text-slate-900 dark:text-slate-50">
+            Reset your password
+          </Text>
+          <Text className="mb-8 mt-1 text-base text-slate-500 dark:text-slate-400">
             Enter your email and we will send you a reset link.
           </Text>
 
           {formError ? (
-            <View testID="form-error" className="mb-4 rounded-xl bg-red-50 px-4 py-3">
-              <Text className="text-sm text-red-700">{formError}</Text>
+            <View
+              testID="form-error"
+              className="mb-4 rounded-xl bg-red-50 px-4 py-3 dark:bg-red-950"
+            >
+              <Text className="text-sm text-red-700 dark:text-red-300">{formError}</Text>
             </View>
           ) : null}
 
@@ -91,7 +96,7 @@ export function ForgotPasswordScreen({ navigation }: Props) {
           />
 
           <Pressable className="mt-4" onPress={() => navigation.goBack()} accessibilityRole="link">
-            <Text className="text-center text-sm font-medium text-emerald-700">
+            <Text className="text-center text-sm font-medium text-emerald-700 dark:text-emerald-400">
               Back to sign in
             </Text>
           </Pressable>

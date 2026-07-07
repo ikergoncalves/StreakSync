@@ -2,13 +2,14 @@ import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { CompositeScreenProps } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useCallback, useEffect, useState } from 'react';
-import { FlatList, Pressable, RefreshControl, Text, View } from 'react-native';
+import { FlatList, Pressable, RefreshControl, Text, useColorScheme, View } from 'react-native';
 
 import { Button } from '../components/Button';
 import { OfflineBanner } from '../components/OfflineBanner';
 import { Screen } from '../components/Screen';
 import { useHabitStreak } from '../hooks/useHabitStreak';
 import { todayLocalISO } from '../lib/streaks';
+import { ACCENT, getInlineColors } from '../lib/theme';
 import { AppStackParamList, AppTabParamList } from '../navigation/types';
 import { useHabitsStore } from '../store/habits';
 import { Habit } from '../types';
@@ -31,6 +32,7 @@ interface HabitRowProps {
 
 function HabitRow({ habit, completed, pendingSync, onToggle, onPress }: HabitRowProps) {
   const streak = useHabitStreak(habit.id);
+  const inlineColors = getInlineColors(useColorScheme());
   const color = habit.color ?? DEFAULT_COLOR;
   const streakLabel =
     habit.frequency === 'weekly' ? `${streak.current} wk streak` : `${streak.current} day streak`;
@@ -40,7 +42,7 @@ function HabitRow({ habit, completed, pendingSync, onToggle, onPress }: HabitRow
       testID={`habit-row-${habit.id}`}
       accessibilityRole="button"
       accessibilityLabel={habit.name}
-      className="mb-3 flex-row items-center rounded-2xl bg-white p-4 shadow-sm"
+      className="mb-3 flex-row items-center rounded-2xl bg-white p-4 shadow-sm dark:bg-slate-900"
       onPress={() => onPress(habit.id)}
     >
       <View
@@ -50,13 +52,19 @@ function HabitRow({ habit, completed, pendingSync, onToggle, onPress }: HabitRow
         <Text className="text-xl">{habit.icon ?? '✅'}</Text>
       </View>
       <View className="ml-3 flex-1">
-        <Text className="text-base font-semibold text-slate-900" numberOfLines={1}>
+        <Text
+          className="text-base font-semibold text-slate-900 dark:text-slate-50"
+          numberOfLines={1}
+        >
           {habit.name}
         </Text>
-        <Text className="mt-0.5 text-sm text-slate-500">
+        <Text className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
           🔥 {streakLabel}
           {pendingSync ? (
-            <Text testID={`pending-sync-${habit.id}`} className="text-xs text-slate-400">
+            <Text
+              testID={`pending-sync-${habit.id}`}
+              className="text-xs text-slate-400 dark:text-slate-500"
+            >
               {'  '}⏳
             </Text>
           ) : null}
@@ -72,7 +80,9 @@ function HabitRow({ habit, completed, pendingSync, onToggle, onPress }: HabitRow
         hitSlop={8}
         className="h-10 w-10 items-center justify-center rounded-full border-2"
         style={
-          completed ? { backgroundColor: color, borderColor: color } : { borderColor: '#cbd5e1' }
+          completed
+            ? { backgroundColor: color, borderColor: color }
+            : { borderColor: inlineColors.uncheckedToggleBorder }
         }
       >
         {completed ? <Text className="text-base font-bold text-white">✓</Text> : null}
@@ -85,8 +95,10 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
   return (
     <View testID="empty-state" className="flex-1 items-center justify-center py-16">
       <Text className="text-5xl">🌱</Text>
-      <Text className="mt-4 text-xl font-semibold text-slate-900">No habits yet</Text>
-      <Text className="mt-1 px-8 text-center text-base text-slate-500">
+      <Text className="mt-4 text-xl font-semibold text-slate-900 dark:text-slate-50">
+        No habits yet
+      </Text>
+      <Text className="mt-1 px-8 text-center text-base text-slate-500 dark:text-slate-400">
         Create your first habit and start building your streak.
       </Text>
       <View className="mt-8 w-full px-6">
@@ -140,8 +152,8 @@ export function TodayScreen({ navigation }: Props) {
     <Screen edges={['top']}>
       <View className="flex-row items-center justify-between px-6 pb-4 pt-2">
         <View>
-          <Text className="text-3xl font-bold text-slate-900">Today</Text>
-          <Text className="mt-0.5 text-sm text-slate-500">{subtitle}</Text>
+          <Text className="text-3xl font-bold text-slate-900 dark:text-slate-50">Today</Text>
+          <Text className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">{subtitle}</Text>
         </View>
         <Pressable
           testID="add-habit-button"
@@ -157,16 +169,22 @@ export function TodayScreen({ navigation }: Props) {
       <OfflineBanner />
 
       {hasSyncFailures ? (
-        <View testID="sync-issue-banner" className="mx-6 mb-3 rounded-xl bg-amber-50 px-4 py-2">
-          <Text className="text-xs font-medium text-amber-800">
+        <View
+          testID="sync-issue-banner"
+          className="mx-6 mb-3 rounded-xl bg-amber-50 px-4 py-2 dark:bg-amber-950"
+        >
+          <Text className="text-xs font-medium text-amber-800 dark:text-amber-200">
             Some changes couldn&apos;t sync. They&apos;re saved on this device.
           </Text>
         </View>
       ) : null}
 
       {error ? (
-        <View testID="today-error" className="mx-6 mb-3 rounded-xl bg-red-50 px-4 py-3">
-          <Text className="text-sm text-red-700">{error}</Text>
+        <View
+          testID="today-error"
+          className="mx-6 mb-3 rounded-xl bg-red-50 px-4 py-3 dark:bg-red-950"
+        >
+          <Text className="text-sm text-red-700 dark:text-red-300">{error}</Text>
         </View>
       ) : null}
 
@@ -187,7 +205,7 @@ export function TodayScreen({ navigation }: Props) {
           <RefreshControl
             refreshing={isSyncing}
             onRefresh={() => void refresh()}
-            tintColor="#059669"
+            tintColor={ACCENT}
           />
         }
         ListEmptyComponent={

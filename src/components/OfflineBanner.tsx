@@ -12,8 +12,11 @@ export function OfflineBanner() {
     return null;
   }
   return (
-    <View testID="offline-banner" className="mx-6 mb-3 rounded-xl bg-amber-50 px-4 py-2">
-      <Text className="text-xs font-medium text-amber-800">
+    <View
+      testID="offline-banner"
+      className="mx-6 mb-3 rounded-xl bg-amber-50 px-4 py-2 dark:bg-amber-950"
+    >
+      <Text className="text-xs font-medium text-amber-800 dark:text-amber-200">
         You&apos;re offline — changes are saved on this device and will sync when you&apos;re back.
       </Text>
     </View>
