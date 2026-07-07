@@ -4,7 +4,7 @@
 // Only PERSONAL data lives here by design — groups, the activity feed, and
 // the leaderboard stay online-only in Phase 4, so nothing social is mirrored.
 
-import { openDatabaseSync, SQLiteDatabase } from 'expo-sqlite';
+import { deleteDatabaseSync, openDatabaseSync, SQLiteDatabase } from 'expo-sqlite';
 
 export const LOCAL_DB_NAME = 'streaksync.db';
 
@@ -104,6 +104,17 @@ export function closeLocalDb(): void {
     db.closeSync();
     db = null;
   }
+}
+
+/**
+ * Deletes the database FILE, not just the handle (account deletion). A future
+ * sign-up on this device must never see a stranger's leftover habits: closing
+ * alone keeps the data on disk, so the file itself has to go. The next
+ * getLocalDb() recreates a fresh, empty schema from scratch.
+ */
+export function deleteLocalDb(): void {
+  closeLocalDb();
+  deleteDatabaseSync(LOCAL_DB_NAME);
 }
 
 // ---------------------------------------------------------------------------
