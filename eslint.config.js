@@ -6,6 +6,7 @@ module.exports = defineConfig([
   expoConfig,
   prettierConfig,
   {
-    ignores: ['dist/*', 'coverage/*', '.expo/*'],
+    // landing-page/ is an isolated Vite project with its own tooling
+    ignores: ['dist/*', 'coverage/*', '.expo/*', 'landing-page/*'],
   },
 ]);
