@@ -74,13 +74,19 @@ On launch the app hydrates instantly from SQLite, then reconciles with the serve
 Phase 5 adds two kinds of notifications:
 
 - **Social pushes** — when a group member breaks a streak, or continues one onto a milestone (every 5th day/week; ordinary daily check-ins deliberately don't notify), the other members of their groups get a push. Sends are **device-to-device**: the acting user's phone posts directly to [Expo's push API](https://docs.expo.dev/push-notifications/sending-notifications/) for its peers right after its own completion finishes syncing — no server-side function. Like the activity feed, this is best-effort and online-only: if the acting device is offline at sync time, the push simply isn't sent.
-- **Personal daily reminders** — each active **daily** habit that isn't checked off by 8:00 PM local time triggers a local notification (weekly habits are out of reminder scope for now; the reminder time becomes configurable in Phase 6). These are scheduled entirely on-device and work fully offline.
+- **Personal daily reminders** — each active **daily** habit that isn't checked off by 8:00 PM local time triggers a local notification (weekly habits are out of reminder scope for now, and the reminder time is fixed — making it configurable is a possible follow-up). These are scheduled entirely on-device and work fully offline.
 
 To set it up:
 
 1. Apply migration `0006_push_tokens.sql` (see step 3 above) — it stores each device's Expo push token, readable only by that user's group peers.
 2. **Use a physical device with a development build.** Remote push delivery is not supported in Expo Go on Android (since SDK 53), so real end-to-end push testing needs an EAS dev build: `npx eas build --profile development --platform android` (the project's `eas.json` and `expo-dev-client` are already configured). Local reminder notifications still work in Expo Go for basic testing; simulators get no push token at all (handled gracefully — the app works fully without one).
 3. Notification permission is requested once after sign-in. Denying it is fine: habits, sync, and groups keep working; you just get no pushes or reminders.
+
+## Polish (Phase 6)
+
+- **Dark mode** follows the OS appearance automatically — no in-app toggle. Styling is pure NativeWind `dark:` variants (`darkMode: 'media'`); the shared palette lives in `src/lib/theme.ts` so every screen uses the same class pairs.
+- **Onboarding**: a 4-slide intro shows exactly once per device/install, right after the first session begins (so a first sign-up sees it; an existing account on a fresh install sees it once too). Skipping counts as seen. "Replay intro" on the Profile screen reopens it anytime without touching the seen flag.
+- **Micro-interactions** (react-native-reanimated): the completion toggle bounces on check-off, the 🔥 streak label pulses when a streak actually increases (value-driven, never on mere re-renders), and list rows fade in on mount. Animations react to the already-applied optimistic state — they never delay the action itself.
 
 ## Scripts
 
@@ -99,7 +105,7 @@ To set it up:
 - [x] **Phase 3 — Social:** groups, invite codes + `streaksync://join/<CODE>` deep links, realtime activity feed, leaderboard
 - [x] **Phase 4 — Offline-first:** local SQLite mirror, sync queue with automatic drain on reconnect, last-write-wins conflict resolution
 - [x] **Phase 5 — Notifications:** social pushes (streak broken / milestone) sent device-to-device via Expo Push, plus offline local daily reminders
-- [ ] **Phase 6 — Polish:** animations, dark mode, onboarding
+- [x] **Phase 6 — Polish:** system-driven dark mode, one-time onboarding intro with replay, and reanimated micro-interactions
 - [ ] **Phase 7 — Ship:** EAS Build, landing page, demo GIF
 
 ## License
