@@ -4,6 +4,25 @@ Offline-first habit tracker with real-time social accountability. Built with Rea
 
 Create habits, check them off daily, and join groups where friends see each other's streaks in real time — with an activity feed and push notifications when someone keeps (or breaks) a streak.
 
+**Live demo:** [landing page](https://REPLACE-WITH-VERCEL-URL) <!-- TODO: replace with your deployed Vercel URL -->
+
+## Screenshots
+
+<!-- TODO: each image below is a placeholder — capture the real screen and save it under docs/screenshots/ with the same filename -->
+
+| Today                                     | Leaderboard                                     | Activity feed                                | Dark mode                               |
+| ----------------------------------------- | ------------------------------------------------ | --------------------------------------------- | ---------------------------------------- |
+| ![Today screen with habit check-offs](docs/screenshots/today-screen.png) | ![Group leaderboard](docs/screenshots/groups-leaderboard.png) | ![Real-time activity feed](docs/screenshots/activity-feed.png) | ![Dark mode](docs/screenshots/dark-mode.png) |
+
+### Demo
+
+![App demo](docs/demo.gif) <!-- TODO: record a short screen capture of check-off → streak growth → group feed and save it as docs/demo.gif (must be recorded manually) -->
+
+## Download
+
+- **Prebuilt APK:** [download from EAS](https://REPLACE-WITH-EAS-BUILD-LINK) <!-- TODO: replace with the shareable link from your EAS preview build (or a GitHub Releases asset) -->
+- **Build it yourself:** `npx eas build --profile preview --platform android` — the `preview` profile in `eas.json` produces a directly installable APK via internal distribution (no store credentials needed).
+
 ## Tech stack
 
 - **Mobile:** [React Native](https://reactnative.dev/) + [Expo](https://expo.dev/) (managed workflow), TypeScript strict
@@ -106,7 +125,7 @@ To set it up:
 - [x] **Phase 4 — Offline-first:** local SQLite mirror, sync queue with automatic drain on reconnect, last-write-wins conflict resolution
 - [x] **Phase 5 — Notifications:** social pushes (streak broken / milestone) sent device-to-device via Expo Push, plus offline local daily reminders
 - [x] **Phase 6 — Polish:** system-driven dark mode, one-time onboarding intro with replay, and reanimated micro-interactions
-- [ ] **Phase 7 — Ship:** EAS Build, landing page, demo GIF
+- [x] **Phase 7 — Ship:** EAS preview APK build profile, static landing page (`landing-page/`), portfolio README with screenshot/demo placeholders
 
 ## License
 
