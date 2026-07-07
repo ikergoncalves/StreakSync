@@ -10,8 +10,8 @@ Create habits, check them off daily, and join groups where friends see each othe
 
 <!-- TODO: each image below is a placeholder — capture the real screen and save it under docs/screenshots/ with the same filename -->
 
-| Today                                     | Leaderboard                                     | Activity feed                                | Dark mode                               |
-| ----------------------------------------- | ------------------------------------------------ | --------------------------------------------- | ---------------------------------------- |
+| Today                                                                    | Leaderboard                                                   | Activity feed                                                  | Dark mode                                    |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------- | -------------------------------------------------------------- | -------------------------------------------- |
 | ![Today screen with habit check-offs](docs/screenshots/today-screen.png) | ![Group leaderboard](docs/screenshots/groups-leaderboard.png) | ![Real-time activity feed](docs/screenshots/activity-feed.png) | ![Dark mode](docs/screenshots/dark-mode.png) |
 
 ### Demo
@@ -53,7 +53,7 @@ npm install
 
 1. Create a free project at [supabase.com/dashboard](https://supabase.com/dashboard).
 2. Apply the database migrations, in order, from `supabase/migrations/`:
-   - **SQL editor (simplest):** open _SQL Editor_ in the dashboard and run the contents of each `NNNN_*.sql` file in ascending order (`0001_initial_schema.sql` through `0006_push_tokens.sql`).
+   - **SQL editor (simplest):** open _SQL Editor_ in the dashboard and run the contents of each `NNNN_*.sql` file in ascending order (`0001_initial_schema.sql` through `0007_account_deletion.sql`).
    - **Supabase CLI (alternative):** `supabase link --project-ref <your-ref>` then `supabase db push`.
 3. **Enable Realtime** for the activity feed: in the dashboard go to _Database → Replication_ and toggle on the `activity_events` table (this adds it to the `supabase_realtime` publication; it can't be done from a migration here). Without it the app still works, but group activity only appears after a manual refresh.
 
@@ -87,6 +87,15 @@ Personal data (habits and completions) works fully offline; groups, the activity
 On launch the app hydrates instantly from SQLite, then reconciles with the server in the background (server wins, except for entities with queued local changes).
 
 > **Tip:** by default Supabase requires email confirmation on signup. For a faster dev loop you can disable it under _Authentication → Providers → Email → Confirm email_.
+
+## Account deletion & data export
+
+Both live in a "Danger zone" on the Profile screen:
+
+- **Export my data** builds a JSON file (profile, habits, completions, plus group names/roles only — never other members' data) and hands it to the OS share sheet. It reads the local SQLite mirror, so it works fully offline; group metadata reflects the last sync.
+- **Delete my account** calls a `SECURITY DEFINER` SQL function (`delete_own_account`, migration `0007`) — the same pattern as the invite-code join RPC, so **no Edge Function and no service-role key in the client**. The function runs with its elevated creator's privileges, which is what lets it delete the caller's `auth.users` row (cascading to every user-owned row), and it is safe because it takes no parameters: it can only ever act on `auth.uid()`.
+- **Sole-owner rule:** a user who is the only owner of a group that still has other members cannot delete their account — the cascade would silently destroy that group for everyone. The app pre-checks and names the blocking groups; the RPC enforces the same rule server-side. Groups where the user is alone just cascade away (nobody else is affected).
+- After a successful deletion the device is wiped too — reminders canceled, the local SQLite file deleted, in-memory state and session cleared — so the next account to sign in on that device can never see the previous one's data.
 
 ## Push notifications setup
 
@@ -126,6 +135,7 @@ To set it up:
 - [x] **Phase 5 — Notifications:** social pushes (streak broken / milestone) sent device-to-device via Expo Push, plus offline local daily reminders
 - [x] **Phase 6 — Polish:** system-driven dark mode, one-time onboarding intro with replay, and reanimated micro-interactions
 - [x] **Phase 7 — Ship:** EAS preview APK build profile, static landing page (`landing-page/`), portfolio README with screenshot/demo placeholders
+- [x] **Phase 8 — Account lifecycle (bonus):** self-service account deletion through a `SECURITY DEFINER` RPC with a sole-owner guard, plus fully offline personal data export via the share sheet
 
 ## License
 
