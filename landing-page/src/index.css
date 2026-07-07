@@ -1,0 +1,6 @@
+@import 'tailwindcss';
+
+/* Same accent as the app's NativeWind theme (emerald-600). */
+@theme {
+  --color-accent: #059669;
+}
