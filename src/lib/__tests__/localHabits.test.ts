@@ -187,9 +187,7 @@ describe('localToggleCompletion', () => {
     // done -> undone -> done: one logical change by sync time, so exactly one
     // queued mutation reflecting the FINAL state — never three operations.
     toggle();
-    const afterFirst = listAllQueueRows('user-1').find(
-      (r) => r.operation === 'toggle_completion',
-    )!;
+    const afterFirst = listAllQueueRows('user-1').find((r) => r.operation === 'toggle_completion')!;
     toggle();
     toggle();
 
@@ -226,6 +224,15 @@ describe('localToggleCompletion', () => {
 
 describe('hydrateHabitsData', () => {
   it('scopes to the given user and orders habits by creation time', () => {
+    // Both creates can land in the same millisecond, making created_at tie
+    // and the ORDER BY fall back to id — pin the ids so the tiebreak is
+    // deterministic instead of random-UUID roulette. (Each create consumes
+    // two UUIDs: the habit's and its queue row's.)
+    mockedRandomUUID
+      .mockReturnValueOnce('00000000-0000-4000-8000-00000000000a')
+      .mockReturnValueOnce('00000000-0000-4000-8000-00000000000b')
+      .mockReturnValueOnce('00000000-0000-4000-8000-00000000000c')
+      .mockReturnValueOnce('00000000-0000-4000-8000-00000000000d');
     const mine = localCreateHabit('user-1', INPUT);
     const later = localCreateHabit('user-1', { ...INPUT, name: 'Run' });
     const theirs = localCreateHabit('user-2', { ...INPUT, name: 'Peer habit' });
@@ -269,11 +276,7 @@ describe('mergeServerData', () => {
     getLocalDb().runSync('DELETE FROM sync_queue WHERE entity_id = ?', [editedHabit.id]);
     localUpdateHabit('user-1', editedHabit.id, { name: 'Meditate daily' });
 
-    mergeServerData(
-      'user-1',
-      [makeServerHabit({ id: editedHabit.id, name: 'Meditate' })],
-      [],
-    );
+    mergeServerData('user-1', [makeServerHabit({ id: editedHabit.id, name: 'Meditate' })], []);
 
     const { habits, completions } = hydrateHabitsData('user-1');
     // The offline creation survives the merge even though the server snapshot
@@ -288,11 +291,7 @@ describe('mergeServerData', () => {
     // server's row must win locally without leaving a duplicate behind.
     applyServerCompletion(makeServerCompletion({ id: 'local-id' }));
 
-    mergeServerData(
-      'user-1',
-      [makeServerHabit()],
-      [makeServerCompletion({ id: 'server-id' })],
-    );
+    mergeServerData('user-1', [makeServerHabit()], [makeServerCompletion({ id: 'server-id' })]);
 
     const rows = getLocalDb().getAllSync<{ id: string }>(
       "SELECT id FROM habit_completions WHERE habit_id = 'habit-server'",
@@ -312,11 +311,7 @@ describe('mergeServerData', () => {
   });
 
   it('normalizes server timestamp formats so local ordering stays consistent', () => {
-    mergeServerData(
-      'user-1',
-      [makeServerHabit({ created_at: '2026-07-01T00:00:00+00:00' })],
-      [],
-    );
+    mergeServerData('user-1', [makeServerHabit({ created_at: '2026-07-01T00:00:00+00:00' })], []);
 
     expect(hydrateHabitsData('user-1').habits[0].created_at).toBe('2026-07-01T00:00:00.000Z');
   });
@@ -405,9 +400,7 @@ describe('getSyncQueueSummary', () => {
     const habit = localCreateHabit('user-1', INPUT);
     const other = localCreateHabit('user-1', { ...INPUT, name: 'Run' });
     localToggleCompletion({ habitId: habit.id, userId: 'user-1', date: '2026-07-02' });
-    getLocalDb().runSync("UPDATE sync_queue SET status = 'failed' WHERE entity_id = ?", [
-      other.id,
-    ]);
+    getLocalDb().runSync("UPDATE sync_queue SET status = 'failed' WHERE entity_id = ?", [other.id]);
 
     const summary = getSyncQueueSummary('user-1');
 
